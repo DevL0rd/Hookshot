@@ -272,6 +272,7 @@ HDR peak brightness show only while HDR is on.
 | | Anisotropic filtering | Game's, 2x, 4x, 8x, 16x | 16x |
 | | Profile | Docked, Handheld (after a restart) | Docked |
 | | Ultrawide | 16:9, Monitor's shape: wider than 16:9, or narrower down to 5:4 (after a restart) | 16:9 |
+| | Shader compile | Wait where needed, Asynchronous | Asynchronous |
 | | Robust buffers | Auto, Off, On (after a restart) | Auto |
 | Audio | Volume | 0 to 100%, in steps of 5 | 100% |
 | | Mute in background | Off, On | Off |
@@ -345,6 +346,11 @@ HDR peak brightness show only while HDR is on.
   frames while it is on.
 - **AMD Anti-Lag 2** Off is the game as without it. Like Reflex, it is not used while Frame generation is on.
 - **Profile** runs the game as the console docked (at the Output resolution) or Handheld (1536x864): lighter on the GPU.
+- **Shader compile** is what a draw does the first time its shader or pipeline is still being built. With **Wait where
+  needed**, a draw whose picture the last frame can fill in is left out for a frame or two, and one into a new picture
+  waits for a quick build without the driver's optimizer (the full build replaces it shortly after). **Asynchronous**,
+  the default, never waits, so effects seen for the first time do not stutter, but one can be missing for a few frames, and one drawn
+  only once can look wrong until it is drawn again.
 - **Robust buffers:** a read past a buffer's end is dropped instead of stopping the GPU. Auto is on, on every card; Off
   can be faster on some NVIDIA cards.
 - **Game speed:** with Per frame, the game runs slower whenever it is below 60 fps. Real time keeps it at normal speed

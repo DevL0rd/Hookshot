@@ -506,6 +506,7 @@ const char* tx_robust(int v) {
     static const char* t[] = {"Auto", "Off", "On"};
     return (unsigned)v < 3 ? t[v] : t[0];
 }
+const char* tx_shader_compile(int v) { return v ? "Asynchronous" : "Wait where needed"; }   // (opts.async_pipelines)
 const char* tx_preset(int v) {
     static const char* t[] = {"Custom", "Minimum (4GB)", "Low (6GB)", "Balanced (8GB)", "High (12GB)", "Ultra (16GB+)"};
     return t[std::min(std::max(v, 0), 5)];
@@ -608,6 +609,10 @@ MENU_HINTS(hn_wide_menus, 0, "The menus stretched over the whole screen, as befo
            "The menus in the middle 16:9; beside them, what the game draws there, out of focus.",
            "The menus in the middle 16:9; black beside them.")
 MENU_HINTS(hn_robust, 0, "On, on every card.", "Can be faster on some NVIDIA cards.", "Always on.")
+MENU_HINTS(hn_shader_compile, 0,
+           "Left out for a frame or two where the last frame's picture fills in; into a new picture it waits for a quick build.",
+           "Never waits, so no first-time stutter. An effect can be missing for a few frames, and one drawn only once can look "
+           "wrong until it is drawn again.")
 MENU_HINTS(hn_fps, 0, nullptr, "With frame generation on, the game's own rate too.")
 MENU_HINTS(hn_menu_size, 0, "Large in fullscreen on a screen of 1080 lines or more while a controller is in use, else Medium.",
            "Smaller, for a desk.", "The usual size.", "Larger, for a TV across the room.")
@@ -688,6 +693,9 @@ Row rows[] = {
     {TAB_GRAPHICS, "Ultrawide menus", &opts.wide_menus, 0, 2, 1, tx_wide_menus,
      "With Ultrawide: the pause, item and map menus, and what shows beside them. Loading screens and pre-rendered movies, "
      "which draw no world either, get the same sides. Changes at once.", hn_wide_menus},
+    {TAB_GRAPHICS, "Shader compile", &opts.async_pipelines, 0, 1, 1, tx_shader_compile,
+     "What a draw does the first time its shader or pipeline is still being built. Changes at once.", hn_shader_compile, false,
+     true},
     {TAB_GRAPHICS, "Robust buffers", &opts.robust, 0, 2, 1, tx_robust,
      "Bounds-checked buffer reads: a read past a buffer's end is dropped instead of stopping the GPU. Applies after a "
      "restart.", hn_robust, true},
