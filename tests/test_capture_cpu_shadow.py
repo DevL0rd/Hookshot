@@ -5,6 +5,8 @@ from pathlib import Path
 import subprocess
 import tempfile
 
+RUN_ALL_ARGS = ['--cxx', '{cxx}']
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -20,10 +22,10 @@ def main():
     # Stop before the pool-lock timing scope; it is outside the extracted operation.
     late = late.split('    const auto tl =')[0]
     shadow = next(line.strip() for line in source.splitlines()
-                  if 'std::memcpy(slot.b.get(), (c->cpu' in line)
+                  if 'pairs.push_back({slot.b.get(), (c->cpu' in line)
     with tempfile.TemporaryDirectory(prefix='capture-cpu-') as temporary:
         folder = Path(temporary)
-        for name, code in (('copy', copy), ('late', late), ('shadow', shadow)):
+        for name, code in (('copy', copy), ('late', late), ('shadow', shadow + '\nfor (auto pair : pairs) std::memcpy(pair.first, pair.second, 4096); pairs.clear();')):
             (folder / ('capture_' + name + '.inc')).write_text(code)
         executable = folder / 'fixture.exe'
         subprocess.run([args.cxx, '-std=c++20', '-O2', '-Wall', '-Wextra', '-Werror',

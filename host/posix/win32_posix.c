@@ -310,9 +310,8 @@ __attribute__((constructor)) static void remember_process_affinity(void) {
 BOOL GetProcessAffinityMask(HANDLE p, DWORD_PTR *proc, DWORD_PTR *sys) {
     (void)p;
     if (!proc || !sys || !process_affinity) { last_error = ERROR_INVALID_PARAMETER; return FALSE; }
-    const DWORD_PTR m = process_affinity;
     long n = sysconf(_SC_NPROCESSORS_CONF);
-    *proc = m;
+    *proc = process_affinity;
     *sys = n >= 64 ? ~(DWORD_PTR)0 : (((DWORD_PTR)1 << n) - 1);
     return TRUE;
 }

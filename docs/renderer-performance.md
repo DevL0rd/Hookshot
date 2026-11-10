@@ -13,9 +13,9 @@ lifetime checks. It does not promise 60 FPS in every scene or with external effe
   reread handles. Texture slot versions and canonical type checks remain mandatory.
 - Cache stage lowering by full control/code content, with bounded per-thread storage.
   `RX_VK_STAGE_CACHE=0` restores the uncached path for comparison.
-- Reuse a bounded submitted-page cache instead of recopying one page for alternating
-  small reads. Page/view generations and inline updates still govern validity.
-  `RX_VK_SUBMITTED_CACHE_SINGLE=1` selects the previous one-page policy.
+- Retain upstream's 32-slot submitted-page cache and direct capture reads. The earlier
+  local page-copy and block-copy experiments are superseded; `RX_VK_SUBMITTED_PAGES=1`
+  selects upstream's one-slot comparison policy.
 - Order overlapping deferred uniform writes with transfer dependencies. Adjacent or
   disjoint ranges do not need an additional barrier.
 - Preserve the presentation aspect in diagnostic screenshots and retain per-frame

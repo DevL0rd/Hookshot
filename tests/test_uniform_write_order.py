@@ -3,6 +3,8 @@ import argparse
 from pathlib import Path
 import subprocess
 import tempfile
+
+RUN_ALL_ARGS = ['--cxx', '{cxx}']
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -52,6 +54,7 @@ void vkCmdUpdateBuffer(int,uint64_t b,uint64_t offset,uint64_t n,const uint8_t* 
  assert(n<=65536 && !(offset&3) && !(n&3));
  queued.push_back({b,offset,std::vector<uint8_t>(data,data+n)});
 }
+void guest_cpu_write(uint64_t,const void*,uint64_t) { ++host_writes; }
 struct Host { void gpu_write(uint64_t,const void*,uint64_t) { ++host_writes; } } host_storage;
 auto* host=&host_storage;
 ''' + body + r'''

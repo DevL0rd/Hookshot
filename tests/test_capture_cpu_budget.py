@@ -3,6 +3,8 @@ import argparse
 from pathlib import Path
 import subprocess
 import tempfile
+
+RUN_ALL_ARGS = ['--cxx', '{cxx}']
 root=Path(__file__).resolve().parents[1]
 parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--cxx',default='g++');args=parser.parse_args()
 source=r'''

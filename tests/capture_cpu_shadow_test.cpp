@@ -56,6 +56,7 @@ bool guarded_copy(void* dst, const void* src, size_t size) {
     return true;
 }
 int main() {
+    std::vector<std::pair<void*, const void*>> pairs;
     uint8_t mapped[12288];
     memset(mapped, 0x99, sizeof mapped);
     memset(guest, 0x33, sizeof guest);
