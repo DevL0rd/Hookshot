@@ -33,6 +33,7 @@ fixture = r'''
 #include <set>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <utility>
 #include <atomic>
 #include <mutex>
@@ -108,6 +109,13 @@ bool create_swapchain(unsigned width,unsigned height) {
     return recreate();
 }
 bool reflex_swapchain_stale() {return stale;}
+// Timing is inert here; the production swapchain decisions remain intact.
+struct StageTrace { StageTrace(const char*, int) {} void mark(const char*) {} };
+struct PresentStageSample {
+    enum Stage { Lock };
+    PresentStageSample(bool, int64_t) {} void mark(Stage) {}
+};
+int64_t prof_now() { return 0; }
 std::mutex present_image_mu;
 void present_begin() {
 ''' + begin + r'''

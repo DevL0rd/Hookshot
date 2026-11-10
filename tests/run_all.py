@@ -27,6 +27,12 @@ OS = "windows" if WINDOWS else "linux"
 # skipped, or fails with --strict. Tests not listed run with no arguments and their own defaults.
 ARGS = {
     "tests/test_framelog_sink.py": ["--cxx", "{cxx}", "--headers", "{vulkan_headers}"],
+    "tests/test_program_answer_domains.py": ["--cxx", "{cxx}", "--headers", "{vulkan_headers}"],
+    "tests/test_uniform_write_order.py": ["--cxx", "{cxx}"],
+    "tests/test_present_stages.py": ["--cxx", "{cxx}"],
+    "tests/test_capture_cpu_shadow.py": ["--cxx", "{cxx}"],
+    "tests/test_capture_cpu_budget.py": ["--cxx", "{cxx}"],
+    "tests/test_capture_size.py": ["--cxx", "{cxx}"],
     "tests/test_setup_tar_diagnostics.py": ["--cc", "gcc"],
     "tests/test_display_startup_failure.py": ["--cxx", "{cxx}"],
     "tests/test_frame_wait_bounds.py": ["--cxx", "{cxx}"],

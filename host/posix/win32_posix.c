@@ -294,13 +294,23 @@ DWORD_PTR SetThreadAffinityMask(HANDLE h, DWORD_PTR mask) {
     for (int i = 0; i < 64; i++) if (CPU_ISSET(i, &old)) r |= (DWORD_PTR)1 << i;
     return r ? r : 1;
 }
-BOOL GetProcessAffinityMask(HANDLE p, DWORD_PTR *proc, DWORD_PTR *sys) {
-    (void)p;
+/* Linux affinity is per thread. Remember the launch allowance before guest
+   threads are pinned; querying the caller's current mask here made a child
+   unable to select the renderer's reserved core. This file also lives in the
+   renderer DSO: use the process leader's allowance when that copy is loaded.
+   There is no SetProcessAffinityMask implementation; per-thread changes
+   must not change this process policy. External launch restrictions are kept. */
+static DWORD_PTR process_affinity;
+__attribute__((constructor)) static void remember_process_affinity(void) {
     cpu_set_t s;
     CPU_ZERO(&s);
-    sched_getaffinity(0, sizeof s, &s);
-    DWORD_PTR m = 0;
-    for (int i = 0; i < 64; i++) if (CPU_ISSET(i, &s)) m |= (DWORD_PTR)1 << i;
+    if (sched_getaffinity(getpid(), sizeof s, &s)) return;
+    for (int i = 0; i < 64; i++) if (CPU_ISSET(i, &s)) process_affinity |= (DWORD_PTR)1 << i;
+}
+BOOL GetProcessAffinityMask(HANDLE p, DWORD_PTR *proc, DWORD_PTR *sys) {
+    (void)p;
+    if (!proc || !sys || !process_affinity) { last_error = ERROR_INVALID_PARAMETER; return FALSE; }
+    const DWORD_PTR m = process_affinity;
     long n = sysconf(_SC_NPROCESSORS_CONF);
     *proc = m;
     *sys = n >= 64 ? ~(DWORD_PTR)0 : (((DWORD_PTR)1 << n) - 1);
