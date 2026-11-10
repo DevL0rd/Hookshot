@@ -69,6 +69,9 @@ struct Pool {
     // (hookshot) its heat: the bytes of the ranges bound from it (every binding, the bind memo's hits too; relaxed, any thread),
     // and those of the last 64-submission windows, halved each window (mirrors_swap_for_hot). made_epoch: its mirror's making
     uint64_t bound_bytes = 0, heat_mark = 0, heat = 0, made_epoch = 0;
+    // (hookshot) its mirror may hold GPU writes no write-back copies to guest memory (memory_note_gpu_write: a bare entry's
+    // guessed range, the pointer table's, a wide binding; a written binding over RX_VK_WB_MAX_KB): never a swap's victim
+    bool gpu_only = false;
     uint64_t direct_write_epoch = 0;   // (the part that last wrote it in guest memory, before it had a mirror)
     uint64_t retired_value = 0;  // (retired: the submission that may still use it)
     bool was_mirrored = false;   // (its mirror was given back: its pages stay in the captures, for the next one)
@@ -2435,6 +2438,11 @@ void memory_note_gpu_write(uint64_t gpu, uint64_t size) {
     }
     std::lock_guard lk(pools_mu);
     rb_hazard_locked(guest, guest + size);
+    // (hookshot: the mirrors it may write keep them, mirrors_swap_for_hot)
+    auto it = imported.upper_bound(guest);
+    if (it != imported.begin()) --it;
+    for (; it != imported.end() && it->second.lo < guest + size; ++it)
+        if (it->second.hi > guest && it->second.mstate == Pool::MIRROR_ON) it->second.gpu_only = true;
 }
 void memory_rb_recording_begun() {
     std::lock_guard lk(pools_mu);
@@ -2754,6 +2762,8 @@ BufferRef gpu_buffer_bind(uint64_t gpu, uint64_t size, bool written) {
         }();
         if (!wb_max || size <= wb_max)
             writebacks.push_back({p, off, std::min(off + size, p->hi - p->lo)});
+        else
+            p->gpu_only = true;   // (hookshot: not copied back, so the mirror is all there is of it)
         rb_hazard_locked(p->lo + off, p->lo + std::min(off + size, p->hi - p->lo));   // (memory_rb_refresh)
     }
     return remember(p, {p->mirror, off, size, 0});
@@ -2851,6 +2861,7 @@ void mirror_free(Pool& p) {
     st_mirror_bytes_freed += p.hi - p.lo;
     st_mirrors_freed++;
     p.mstate = Pool::MIRROR_NONE;
+    p.gpu_only = false;
     pools_gen++;   // (a parallel replay thread's pool cache: looked up again)
 }
 void mirrors_give_back(uint64_t want_bytes) {   // (pools_mu held)
@@ -2968,12 +2979,16 @@ void imports_give_back() {   // (pools_mu held)
 // 29 GB of ranges, read over PCIe, while the mirrors held 480 MB of colder pools: the GPU at ~70% and 15 of its 45 W, 17-25 fps.
 // Now a wanted pool that does not fit takes the mirrors of pools with a quarter of its heat or less (all of them together),
 // coldest first: only mirrors the GPU is done with (last_value, as mirrors_give_back), made kSwapHold submissions ago or more,
-// one swap per 16 submissions. RX_VK_MIRROR_HEAT=0: as before
+// one swap per 16 submissions. And only mirrors guest memory has all of after their write-backs: freeing one the GPU wrote
+// past them (gpu_only: the foliage culling's records through a bare entry, bound every frame through 64 bytes and so cold)
+// sent its records back to stale guest memory, the missing foliage again. With RX_VK_FOLLOW_STORES (stores through the page
+// table, bound nowhere) any mirror may be one: no swaps. RX_VK_MIRROR_HEAT=0: as before
+// (heat = heat/2 + a window's bytes settles at twice a window's: the 64 MB floor is 32 MB of ranges bound a window)
 constexpr uint64_t kSwapHold = 600;
 int64_t st_swaps = 0;
 /// The swap's choice, as data (tests/test_mirror_heat.py): of the candidates' sizes and heats, coldest first, how many make
 /// room for want_bytes under the budget; 0 when they cannot, or when their heat together is more than a quarter of the
-/// wanted pool's (or it reads less than 64 MB of ranges a window: not worth a mirror's copy)
+/// wanted pool's (or its heat is under 64 MB, ~32 MB of ranges bound a window: not worth a mirror's copy)
 size_t mirror_swap_pick(const uint64_t* bytes, const uint64_t* heat, size_t count, uint64_t used, uint64_t budget,
                         uint64_t want_bytes, uint64_t want_heat, uint64_t* freed_out, uint64_t* cold_heat_out) {
     *freed_out = *cold_heat_out = 0;
@@ -2986,13 +3001,14 @@ size_t mirror_swap_pick(const uint64_t* bytes, const uint64_t* heat, size_t coun
     return k;
 }
 void mirrors_swap_for_hot() {   // (pools_mu held)
-    static const bool on = !getenv("RX_VK_MIRROR_HEAT") || atoi(getenv("RX_VK_MIRROR_HEAT")) != 0;
+    static const bool on = (!getenv("RX_VK_MIRROR_HEAT") || atoi(getenv("RX_VK_MIRROR_HEAT")) != 0) &&
+                           !getenv("RX_VK_FOLLOW_STORES");
     if (!on || mirror_wanted.empty()) return;
     static uint64_t last_swap;
     if (mirror_epoch - last_swap < 16) return;
     // (the hottest wanted pool only: trying the others after it let small pools trade 16 MB mirrors back and forth, each swap
     // making the mirrors young again, and the 160 MB pool never found kSwapHold-old ones to take. And only one read enough to
-    // matter: 64 MB of ranges a window)
+    // matter: 64 MB of heat, ~32 MB of ranges a window)
     auto hottest = std::max_element(mirror_wanted.begin(), mirror_wanted.end(),
                                     [](const Pool* a, const Pool* b) { return a->heat < b->heat; });
     {
@@ -3001,7 +3017,7 @@ void mirrors_swap_for_hot() {   // (pools_mu held)
         if (w->mstate != Pool::MIRROR_WANTED) return;
         std::vector<Pool*> cold;
         for (auto& [lo, p] : imported)
-            if (p.mstate == Pool::MIRROR_ON && &p != w && !p.inherit_pending && p.last_value <= mem_completed &&
+            if (p.mstate == Pool::MIRROR_ON && &p != w && !p.inherit_pending && !p.gpu_only && p.last_value <= mem_completed &&
                 mirror_epoch - p.made_epoch >= kSwapHold && p.heat < w->heat / 4)
                 cold.push_back(&p);
         std::sort(cold.begin(), cold.end(), [](const Pool* a, const Pool* b) { return a->heat < b->heat; });
@@ -3012,12 +3028,17 @@ void mirrors_swap_for_hot() {   // (pools_mu held)
                                           &freed, &cold_heat);
         if (!k) return;
         for (size_t i = 0; i < k; i++) mirror_free(*cold[i]);
-        std::iter_swap(mirror_wanted.begin(), hottest);   // (made first: the space freed is its, not a colder wanted pool's)
+        // (made here, first: the space freed is its, not a colder wanted pool's)
+        mirror_wanted.erase(hottest);
+        const bool made = mirror_make(*w);
         last_swap = mirror_epoch;
-        if (st_swaps++ < 32 || st_swaps % 64 == 0)
-            logf("vk: pool %#llx (%llu MB, %llu MB bound a window) takes the mirrors of %zu colder pools (%llu MB, %llu MB bound a window; "
-                 "%lld swaps so; RX_VK_MIRROR_HEAT=0: off)", (unsigned long long)w->lo, (unsigned long long)(n >> 20),
-                 (unsigned long long)(w->heat >> 20), k, (unsigned long long)(freed >> 20), (unsigned long long)(cold_heat >> 20),
+        if (!made)
+            logf("vk: pool %#llx (%llu MB): its mirror was not made after %zu colder ones (%llu MB) were given back for it",
+                 (unsigned long long)w->lo, (unsigned long long)(n >> 20), k, (unsigned long long)(freed >> 20));
+        else if (st_swaps++ < 32 || st_swaps % 64 == 0)
+            logf("vk: pool %#llx (%llu MB, ~%llu MB bound a window) takes the mirrors of %zu colder pools (%llu MB, ~%llu MB bound a "
+                 "window; %lld swaps so; RX_VK_MIRROR_HEAT=0: off)", (unsigned long long)w->lo, (unsigned long long)(n >> 20),
+                 (unsigned long long)(w->heat >> 21), k, (unsigned long long)(freed >> 20), (unsigned long long)(cold_heat >> 21),
                  (long long)st_swaps);
     }
 }
@@ -3199,6 +3220,7 @@ bool mirror_make(Pool& pool) {
         }
         p->mstate = Pool::MIRROR_ON;
         p->made_epoch = mirror_epoch;
+        p->gpu_only = false;
         pools_gen.fetch_add(1, std::memory_order_relaxed);   // (the binding's buffer changes: guest memory, then this mirror)
         p->synced_gen = gen_now;
         p->synced_epoch = mirror_epoch;

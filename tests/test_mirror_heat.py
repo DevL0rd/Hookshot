@@ -94,8 +94,10 @@ def main():
     source = (ROOT / "gpu/vk/vk_memory.cpp").read_text(encoding="utf-8")
     pick = block(source, "size_t mirror_swap_pick(")
     swap = block(source, "void mirrors_swap_for_hot()")
-    # (the swap takes only mirrors the GPU is done with, old enough, and makes the wanted pool first)
-    for need in ("p.last_value <= mem_completed", "kSwapHold", "mirror_swap_pick(", "std::iter_swap(mirror_wanted.begin(), hottest)"):
+    # (the swap takes only mirrors the GPU is done with, old enough, that guest memory has all of after their write-backs,
+    # none with stores through the page table, and makes the wanted pool first)
+    for need in ("p.last_value <= mem_completed", "kSwapHold", "!p.gpu_only", "RX_VK_FOLLOW_STORES", "mirror_swap_pick(",
+                 "mirror_wanted.erase(hottest)", "mirror_make(*w)"):
         assert need in swap, "mirrors_swap_for_hot: no " + need
     with tempfile.TemporaryDirectory(prefix="hookshot-mirror-heat-") as temp:
         src, exe = Path(temp) / "fixture.cpp", Path(temp) / "fixture.exe"
