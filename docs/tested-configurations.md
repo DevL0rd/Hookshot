@@ -25,6 +25,8 @@ otherwise.
 
 | 2026-11-10 | host `v2.0.11-741-gd003a75` (source `74e73a05`), combined #1541/#1542/#1543/#1544 on main `1392ea3` | Bazzite, KDE Wayland | RTX 5080, 615.78.08 | Ryzen 7 9850X3D, 32 GB | Saved player settings: 5120x1440 picture, 3840x1080 scene, 2560x720 mailbox window; FG off, external neural effect off; silent, copied saves | Hyrule Field child checkpoint: 6 s standing, four 2 s camera/walking phases | Native present-call mean 59.98 FPS standing, 57.79/59.95 FPS camera, 59.98/59.97 FPS walking. First camera pan had two intervals over 50 ms, max 73.70 ms. Source suites pass; not a constant-60 or physical-display timing claim. Warm Forest movement test completed at 57.03-60.01 FPS (max 27.38 ms). Earlier Forest and Market attempts hit the local 3 GiB free-swap guard; no completed Market event result. Enabled external neural effect: all Forest phases completed, 42.58-47.39 FPS, max 31.01 ms; model/composition counters advanced |
 
+| 2026-11-10 | host `v2.0.11-769-g9aaf160` (source `5ba993f3`), combined #1541/#1542/#1543/#1544 on main `117eae7`, local F10 companion hook | Bazzite, KDE Wayland | RTX 5080, 615.78.08 | Ryzen 7 9850X3D, 32 GB | Same saved settings as the combined 1392ea3 run above; FG and external neural effect off; current generated output-size hooks, silent copied save | Hyrule Field child: 6 s standing, four 2 s camera/walking phases | All phases completed, native present-call means 59.82-60.05 FPS. Warm smoke test only, not an uncached or whole-game performance result. Player build installed after checking copied-save gameplay |
+
 ## Limits of the original RTX 4070 Ti runs
 
 - Real mouse aiming with Mouse camera = Native after #1462 (the camera states were traced, but not tested with a real mouse).
