@@ -2743,8 +2743,10 @@ std::unique_ptr<Program> seed_program_of(const uint64_t code[3], bool mesh, cons
     if (!by_stage[want[0]]) return nullptr;
     return seed_translate(by_stage, attributes, color_types, key_out);
 }
-const Program* seed_variant_of(const uint64_t code[3], bool mesh, const uint32_t attributes[16], const uint8_t color_types[8],
-                               const std::vector<uint8_t>& questions, const std::vector<Program::Answer>& answers) {
+/// (seed_variant_of, seed_plain_of) the variant translated with the questions and answers given, or with none: nothing bound, each
+/// slot answers what its instruction declares (as seed_translate's program), and the questions asked are noted
+static const Program* seed_variant_made(const uint64_t code[3], bool mesh, const uint32_t attributes[16], const uint8_t color_types[8],
+                                        const std::vector<uint8_t>* questions, const std::vector<Program::Answer>* answers) {
     const SeedStage* by_stage[8]{};
     const int want[3] = {mesh ? 7 : 0, 1, mesh ? 6 : -1};
     for (int k = 0; k < 3; k++) {
@@ -2773,7 +2775,7 @@ const Program* seed_variant_of(const uint64_t code[3], bool mesh, const uint32_t
     p->fallback = mesh && dev.uses_mesh_fallback(by_stage[6] != nullptr);
     p->mesh = mesh && !p->fallback;
     p->codes[0] = code[0], p->codes[1] = code[1], p->codes[2] = code[2];
-    questions_in = &questions, questions_at = 0, answers_in = &answers;
+    if (questions) questions_in = questions, questions_at = 0, answers_in = answers;
     struct Reset { ~Reset() { questions_in = nullptr, answers_in = nullptr; } } reset;
     if (mesh) translate_mesh_into(*p, *blank, by_stage[6] ? &code_of[6] : nullptr, code_of[7], nullptr, fs, color_types);
     else translate_into(*p, *blank, &code_of[0], fs, nullptr, color_types);
@@ -2789,6 +2791,13 @@ const Program* seed_variant_of(const uint64_t code[3], bool mesh, const uint32_t
         }
     variants.push_back(std::move(p));
     return variants.back().get();
+}
+const Program* seed_variant_of(const uint64_t code[3], bool mesh, const uint32_t attributes[16], const uint8_t color_types[8],
+                               const std::vector<uint8_t>& questions, const std::vector<Program::Answer>& answers) {
+    return seed_variant_made(code, mesh, attributes, color_types, &questions, &answers);
+}
+const Program* seed_plain_of(const uint64_t code[3], bool mesh, const uint32_t attributes[16], const uint8_t color_types[8]) {
+    return seed_variant_made(code, mesh, attributes, color_types, nullptr, nullptr);
 }
 
 const Program* program_find_portable(uint64_t key, uint64_t variant) {
