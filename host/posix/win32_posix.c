@@ -137,7 +137,7 @@ BOOL WaitOnAddress(volatile void *addr, void *compare, SIZE_T size, DWORD ms) {
     if (r == -1 && errno == ETIMEDOUT) { last_error = ERROR_TIMEOUT; return FALSE; }
     return TRUE;
 }
-void WakeByAddressSingle(void *addr) { futex((volatile uint32_t *)((uintptr_t)addr & ~(uintptr_t)3), FUTEX_WAKE_PRIVATE, 1, NULL); }
+void WakeByAddressSingle(void *addr) { futex((volatile uint32_t *)((uintptr_t)addr & ~(uintptr_t)3), FUTEX_WAKE_PRIVATE, INT_MAX, NULL); }
 void WakeByAddressAll(void *addr) { futex((volatile uint32_t *)((uintptr_t)addr & ~(uintptr_t)3), FUTEX_WAKE_PRIVATE, INT_MAX, NULL); }
 
 /* ---- time ---- */
@@ -221,15 +221,15 @@ static void thread_finish(DWORD code) {
     thread_unref(t);
 }
 static void apply_thread_priority(HThread *t) {
-    const int p = __atomic_load_n(&t->priority, __ATOMIC_RELAXED);
+    const int p = __atomic_load_n(&t->priority, __ATOMIC_SEQ_CST);
     const int nice = p <= THREAD_PRIORITY_IDLE ? 19 : p <= THREAD_PRIORITY_LOWEST ? 10 : p == THREAD_PRIORITY_BELOW_NORMAL ? 5 : 0;
-    const pid_t tid = __atomic_load_n(&t->tid, __ATOMIC_ACQUIRE);
+    const pid_t tid = __atomic_load_n(&t->tid, __ATOMIC_SEQ_CST);
     if (nice && (tid || t == self_thread)) setpriority(PRIO_PROCESS, tid ? (id_t)tid : 0, nice);
 }
 static void *thread_entry(void *p) {
     HThread *t = (HThread *)p;
     self_thread = t;
-    __atomic_store_n(&t->tid, (pid_t)syscall(SYS_gettid), __ATOMIC_RELEASE);
+    __atomic_store_n(&t->tid, (pid_t)syscall(SYS_gettid), __ATOMIC_SEQ_CST);
     apply_thread_priority(t);
     thread_finish(t->fn(t->arg));
     return NULL;
@@ -283,7 +283,7 @@ BOOL DuplicateHandle(HANDLE sp, HANDLE src, HANDLE tp, HANDLE *out, DWORD access
 BOOL SetThreadPriority(HANDLE h, int p) {
     HThread *t = thread_of(h);
     if (!t) { last_error = ERROR_INVALID_HANDLE; return FALSE; }
-    __atomic_store_n(&t->priority, p, __ATOMIC_RELEASE);
+    __atomic_store_n(&t->priority, p, __ATOMIC_SEQ_CST);
     apply_thread_priority(t);
     return TRUE;
 }
