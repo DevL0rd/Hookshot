@@ -312,9 +312,9 @@ def patch_movie_frames(s):
 # hos_frame_whole carries the fractions per counter while the frames' own time is the step, so each moves at the game's rate;
 # otherwise it cuts as the game does. (A site's function, its code to replace, and the counter's address for its remainder.)
 WHOLE_SITES = (
+    # (the cut alone, the function's one: the multiply before it is a64_fpx_hot_mul32_fma32 in a lift where the function is
+    # among A64_HOT_FUNCS)
     ("void f_80a87e50(Ctx *__restrict A64_NOESC c) {@",
-     "    _v=a64_fpx_mul32_fma32(c,_a,_b,_z);@"
-     "    a64_vset64(c->vreg[0],_v);}@"
      "    c->x[12]=recomp_fp_to_int(c->vreg[0][0]&UINT64_C(0xffffffff),32,32,1,3,c->fpcr,&c->fpsr);@",
      "c->x[19] + 864"),
     ("void f_832b32b0(Ctx *__restrict A64_NOESC c) {@",

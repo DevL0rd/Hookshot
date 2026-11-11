@@ -82,6 +82,10 @@ class FrameWholeTests(unittest.TestCase):
             self.assertEqual(oot_patches.patch_whole_frames(other), (other, 0))
             none = lifted.replace("void f_8", "void f_9")
             self.assertEqual(oot_patches.patch_whole_frames(none), (none, 0))
+        # (a lift where the function is hot: its float helpers are a64_fpx_hot_*, the cut the same)
+        _, old0, _ = oot_patches.WHOLE_SITES[0]
+        hot = LIFTED[0].replace(old0, "    _v=a64_fpx_hot_mul32_fma32(c,_a,_b,_z);\n    a64_vset64(c->vreg[0],_v);}\n" + old0)
+        self.assertEqual(oot_patches.patch_whole_frames(hot)[1], 1)
         both, n = oot_patches.patch_whole_frames(LIFTED[0] + LIFTED[1].replace('#include "a64.h"\n', ""))
         self.assertEqual(n, 2)
         self.assertEqual(both.count(oot_patches.WHOLE_DECL), 1)
