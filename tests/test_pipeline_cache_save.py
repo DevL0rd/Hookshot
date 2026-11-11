@@ -109,8 +109,8 @@ class PipelineCacheSaveTests(unittest.TestCase):
 
     def test_in_play_the_cache_is_written_only_once_it_has_grown(self):
         # With the play files, a save in play leaves the cache's own file alone for a little growth (an ask answered
-        # from the driver's own cache is copied into it); past 64 MB it is written, and the forced save at the close
-        # writes whatever changed once.
+        # from the driver's own cache is copied into it); past 64 MB it is written, and a forced save (Restart now, the
+        # prepare) writes whatever changed once.
         self.check_case('in-play')
 
     def check_case(self, case):

@@ -239,7 +239,7 @@ int run(const std::string& name) {
         pipeline_cache_save(false);
         CHECK(wait_until(play_saves, 1));
         CHECK(copies == 0 && writes == 0 && replacements == 0);
-        pipeline_cache_save(true);  // Waits for the worker; at the close it is written once.
+        pipeline_cache_save(true);  // Waits for the worker; a forced save (Restart now) writes it once.
         CHECK(play_saves == 2 && copies == 1 && writes == 1 && replacements == 1 && new_file() && pcache_saved_size == 96);
         // Grown past the threshold (64 MB), it is written in play too.
         cache_size = 96 + (64u << 20);

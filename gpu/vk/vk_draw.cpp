@@ -870,7 +870,7 @@ void play_cache_save() {
 /// in-memory hit, while asked of the empty generation first every one came from the driver's disk cache, about five times as
 /// slow (a 10-minute first visit on an RTX 4070 Ti SUPER: 7.3 s of links against 1.3 s, 2.2 ms a pipeline against 0.4).
 /// pcache grows by it only for a library the warm pass did not leave there (a folder prepared before the warm pass), and
-/// only in memory: it is not written in play for that (pipeline_cache_save), once at the close.
+/// only in memory: it is not written in play for that (pipeline_cache_save) until it has grown 64 MB.
 /// RX_VK_PLAY_ASK_START_FIRST=0: the generation first for the libraries too, as before
 template <class CI>
 VkResult create_cached(VkResult (*create)(VkPipelineCache, const CI*, VkPipeline*), const CI* ci, VkPipeline* pl) {
@@ -8227,15 +8227,15 @@ void pipeline_cache_save(bool force) {
             // (in play only once it has grown by a good deal: what play makes is in the play files, and the little pcache still
             // grows by there (a stage library the driver's own cache answered, copied into it) had it written whole at every
             // save all the same, 2.4 GB 25 times in a 10-minute first visit for 9 MB more. Past the threshold it is written,
-            // so a folder prepared before the warm pass keeps its libraries through a crash; at the close it is written once
-            // if it changed at all. RX_VK_PLAY_SAVE_START_MB=<n>: the growth it is written at in play (64; 0: any, as before))
-            static const size_t play_grown = (size_t)(getenv("RX_VK_PLAY_SAVE_START_MB") ? atoll(getenv("RX_VK_PLAY_SAVE_START_MB")) : 64) << 20;
+            // so a folder prepared before the warm pass keeps its libraries through a crash. The window's close does not write it
+            // (pipeline_cache_close saves the generation only); a forced save does: Restart now, the prepare. RX_VK_PLAY_SAVE_START_MB=<n>: the growth it is written at in play (64; 0: any, as before))
+            static const size_t play_grown = (size_t)(getenv("RX_VK_PLAY_SAVE_START_MB") ? std::max(0LL, atoll(getenv("RX_VK_PLAY_SAVE_START_MB"))) : 64) << 20;
             bool write = vkGetPipelineCacheData(dev.device, pcache, &n, nullptr) == VK_SUCCESS && n && n != pcache_saved_size;
             if (write && !force && play_grown && play_cache_in_use() && n < pcache_saved_size + play_grown) {
                 write = false;
                 static std::atomic<int> told{0};
                 if (told++ < 4)
-                    logf("vk: pipeline cache %zu KB larger in play: written at the close, or once it is %zu MB larger",
+                    logf("vk: pipeline cache %zu KB larger in play: written once it is %zu MB larger, or by a forced save",
                          (n - std::min<size_t>(n, pcache_saved_size)) >> 10, play_grown >> 20);
             }
             if (write) {
