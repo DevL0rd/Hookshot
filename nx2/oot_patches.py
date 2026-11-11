@@ -308,6 +308,9 @@ def patch_movie_frames(s):
 # - f_80a87e50, the pick-up indicator above Link's head (a rupee, a Deku Stick): the count it shows (+864) moves toward the
 #   wallet's (+860) by (int)(step * max(distance / 50, 1)) and the indicator fades when they meet. Cut to 0, it stayed at the old
 #   count until a door or a talk replaced it (issue 1832).
+# - f_803edf70, the time of day: each frame it adds (int)(2 * step) game seconds (+60) to the seconds of the day (+40, a day of
+#   86400, then the day count +44). Cut, it added 1 a frame below 120 fps (the day slower: 83% at 100) and 0 above 120, where
+#   the clock stood still and the sun swung back and forth over the frozen hour.
 # hos_frame_whole carries the fractions per counter while the frames' own time is the step, so each moves at the game's rate;
 # otherwise it cuts as the game does. A site is added here once it is seen to misbehave in game. (A site's function, its code to
 # replace, and the counter's address for its remainder.)
@@ -317,6 +320,11 @@ WHOLE_SITES = (
     ("void f_80a87e50(Ctx *__restrict A64_NOESC c) {@",
      "    c->x[12]=recomp_fp_to_int(c->vreg[0][0]&UINT64_C(0xffffffff),32,32,1,3,c->fpcr,&c->fpsr);@",
      "c->x[19] + 864"),
+    # (the cut with the store after it: the function cuts into x8 the same way once more, for the minutes)
+    ("void f_803edf70(Ctx *__restrict A64_NOESC c) {@",
+     "    c->x[8]=recomp_fp_to_int(c->vreg[0][0]&UINT64_C(0xffffffff),32,32,1,3,c->fpcr,&c->fpsr);@"
+     "    recomp_store32(c,c->x[19] + 60,c->x[8]);@",
+     "c->x[19] + 60"),
 )
 WHOLE_SITES = tuple((h.replace("@", "\n"), o.replace("@", "\n"), k) for h, o, k in WHOLE_SITES)
 WHOLE_MARK = "/* (the step's whole frames: nx2/oot_patches.py) */"
@@ -485,7 +493,7 @@ def apply(gen, *, protect_hearts=False, required=False):
               "keeps the game's own step)" % (step_sites, len(STEP_SITES)))
     elif whole_sites != len(WHOLE_SITES):   # (the frames' own time without them: the pick-up indicator stays above 60 fps)
         print("oot_patches: WARNING: %d of %d frame counters found for the step's whole frames (above 60 fps a counter can stop: "
-              "the pick-up indicator)" % (whole_sites, len(WHOLE_SITES)))
+              "the pick-up indicator, the time of day)" % (whole_sites, len(WHOLE_SITES)))
     apply_output_size(gen, required=required)
 
 
