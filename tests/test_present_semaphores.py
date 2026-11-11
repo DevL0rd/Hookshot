@@ -123,6 +123,7 @@ struct PresentStageSample {
     PresentStageSample(bool, int64_t) {} void mark(Stage) {}
 };
 int64_t prof_now() { return 0; }
+int menu_vsync() {return 0;}   // (vk_menu.cpp: the V-Sync row, Auto)
 std::mutex present_image_mu;
 void present_begin() {
 ''' + begin + r'''
