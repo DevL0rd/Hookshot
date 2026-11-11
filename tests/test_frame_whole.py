@@ -2,7 +2,7 @@
 (host/frame_whole.h, nx2/oot_patches.py patch_whole_frames).
 
 The pick-up indicator above Link's head (f_80a87e50) moves the count it shows toward the wallet's by (int)(step * per) and fades
-when they meet; f_832b32b0 adds (unsigned)step to a frame counter. Under a Frame rate cap above 60 the step is the frame's own
+when they meet. Under a Frame rate cap above 60 the step is the frame's own
 time, under 1 (0.42 at 144 fps): cut to 0 every frame, the count never moved and the indicator stayed. With the frames' own time
 as the step (carry), hos_frame_whole adds the amount to the counter's own remainder and hands out its whole frames: 144 frames of
 60/144 are 60; an amount of 1 or more keeps its fraction too; two counters keep their own remainders; NaN and amounts below zero
@@ -86,9 +86,6 @@ class FrameWholeTests(unittest.TestCase):
         _, old0, _ = oot_patches.WHOLE_SITES[0]
         hot = LIFTED[0].replace(old0, "    _v=a64_fpx_hot_mul32_fma32(c,_a,_b,_z);\n    a64_vset64(c->vreg[0],_v);}\n" + old0)
         self.assertEqual(oot_patches.patch_whole_frames(hot)[1], 1)
-        both, n = oot_patches.patch_whole_frames(LIFTED[0] + LIFTED[1].replace('#include "a64.h"\n', ""))
-        self.assertEqual(n, 2)
-        self.assertEqual(both.count(oot_patches.WHOLE_DECL), 1)
 
 
 if __name__ == "__main__":

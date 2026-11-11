@@ -307,22 +307,16 @@ def patch_movie_frames(s):
 # is 1; under a Frame rate cap above 60 it is the frame's own time, under 1 (0.42 at 144 fps), and the cut is 0 every frame:
 # - f_80a87e50, the pick-up indicator above Link's head (a rupee, a Deku Stick): the count it shows (+864) moves toward the
 #   wallet's (+860) by (int)(step * max(distance / 50, 1)) and the indicator fades when they meet. Cut to 0, it stayed at the old
-#   count until a door or a talk replaced it.
-# - f_832b32b0 adds (unsigned)step to a frame counter at x19 + x20, which then never moved.
+#   count until a door or a talk replaced it (issue 1832).
 # hos_frame_whole carries the fractions per counter while the frames' own time is the step, so each moves at the game's rate;
-# otherwise it cuts as the game does. (A site's function, its code to replace, and the counter's address for its remainder.)
+# otherwise it cuts as the game does. A site is added here once it is seen to misbehave in game. (A site's function, its code to
+# replace, and the counter's address for its remainder.)
 WHOLE_SITES = (
     # (the cut alone, the function's one: the multiply before it is a64_fpx_hot_mul32_fma32 in a lift where the function is
     # among A64_HOT_FUNCS)
     ("void f_80a87e50(Ctx *__restrict A64_NOESC c) {@",
      "    c->x[12]=recomp_fp_to_int(c->vreg[0][0]&UINT64_C(0xffffffff),32,32,1,3,c->fpcr,&c->fpsr);@",
      "c->x[19] + 864"),
-    ("void f_832b32b0(Ctx *__restrict A64_NOESC c) {@",
-     "    { { uint64_t _v=recomp_load32(c,(c->x[8]+16ULL)); a64_vset64(c->vreg[0],_v); } }@"
-     "    c->x[8]=recomp_fp_to_int(c->vreg[0][0]&UINT64_C(0xffffffff),32,32,0,3,c->fpcr,&c->fpsr);@"
-     "    { uint64_t _a=c->x[9],_b=((uint64_t)(uint32_t)(((uint32_t)(c->x[8])) << 0)),_r=_a+_b; _r&=0xFFFFFFFFULL; c->x[8]=_r; }@"
-     "    recomp_store32(c,(c->x[19] + c->x[20]),c->x[8]);@",
-     "c->x[19] + c->x[20]"),
 )
 WHOLE_SITES = tuple((h.replace("@", "\n"), o.replace("@", "\n"), k) for h, o, k in WHOLE_SITES)
 WHOLE_MARK = "/* (the step's whole frames: nx2/oot_patches.py) */"
