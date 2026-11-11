@@ -224,7 +224,7 @@ static void apply_thread_priority(HThread *t) {
     const int p = __atomic_load_n(&t->priority, __ATOMIC_SEQ_CST);
     const int nice = p <= THREAD_PRIORITY_IDLE ? 19 : p <= THREAD_PRIORITY_LOWEST ? 10 : p == THREAD_PRIORITY_BELOW_NORMAL ? 5 : 0;
     const pid_t tid = __atomic_load_n(&t->tid, __ATOMIC_SEQ_CST);
-    if (nice && (tid || t == self_thread)) setpriority(PRIO_PROCESS, tid ? (id_t)tid : 0, nice);
+    if (nice && tid) setpriority(PRIO_PROCESS, (id_t)tid, nice);
 }
 static void *thread_entry(void *p) {
     HThread *t = (HThread *)p;
