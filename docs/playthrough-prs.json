@@ -1,0 +1,63 @@
+{
+  "upstream": "https://github.com/NotRexed/Hookshot",
+  "upstream_base": "ddafc1f9df3c34e6971d29b12ab6de5d55696685",
+  "fork": "https://github.com/DevL0rd/Hookshot",
+  "branch": "playthrough-fixes",
+  "included": [
+    {
+      "pr": 2114,
+      "url": "https://github.com/NotRexed/Hookshot/pull/2114",
+      "head": "d50b10cad0207ef7582c39f52525e154a94e20f8",
+      "merge_commit": "8aee507e3d6bd997837684bddb9ab2616f87d6af",
+      "purpose": "Linux video conversion and SIMD interleave"
+    },
+    {
+      "pr": 1541,
+      "url": "https://github.com/NotRexed/Hookshot/pull/1541",
+      "head": "733d71a84c20180ad9af7a41addebf9347983bae",
+      "merge_commit": "061d067a53b47dd415a63525513438d7eb54154b",
+      "purpose": "Renderer CPU reuse, affinity and bounded diagnostics"
+    },
+    {
+      "pr": 1377,
+      "url": "https://github.com/NotRexed/Hookshot/pull/1377",
+      "head": "bfb3b7b42edb58ad20b59bff029b25d9edb80992",
+      "merge_commit": "ef21bd010a4a96829423658d843515bb555566c1",
+      "purpose": "Prefer hot memory pools for VRAM mirrors"
+    },
+    {
+      "pr": 1961,
+      "url": "https://github.com/NotRexed/Hookshot/pull/1961",
+      "head": "d67f85587d752238f1a879f782cf9c20b76cd9af",
+      "merge_commit": "568dd7ba90c32c5b03ca47e252e0c55bead083a8",
+      "purpose": "Prepared stage-library lookup and cache-save policy"
+    },
+    {
+      "pr": 1946,
+      "url": "https://github.com/NotRexed/Hookshot/pull/1946",
+      "head": "27d9136bbbb8f32f39c852c263d6746667963c6b",
+      "merge_commit": "8e302f2cf516e28af9199475d3b4f7b6192e4c89",
+      "purpose": "Quick pipelines and Shader compile option"
+    },
+    {
+      "pr": 2133,
+      "url": "https://github.com/NotRexed/Hookshot/pull/2133",
+      "head": "87814a2eb25c4bff83f03f06910d8bc2a76d9e94",
+      "merge_commit": "910c7ff86bf8e970ca223806b085ef4373df2de7",
+      "purpose": "Converted pipeline-state contribution"
+    },
+    {
+      "pr": 2134,
+      "url": "https://github.com/NotRexed/Hookshot/pull/2134",
+      "head": "f5761e2eb8282038af9be05d28529da883e8cf21",
+      "merge_commit": "c702e314d224055f0b7190ccd694ef7d7e03f1a1",
+      "purpose": "Plain-variant preparation and additional pipeline states"
+    }
+  ],
+  "excluded": [
+    {
+      "pr": 1009,
+      "reason": "Reduces texture detail to relieve low-VRAM pressure; preserve image quality."
+    }
+  ]
+}
