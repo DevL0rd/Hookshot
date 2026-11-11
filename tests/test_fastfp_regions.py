@@ -235,10 +235,12 @@ def check_c(cc):
             f.write(src)
         flags = toolchain.native_target(host=True) + toolchain.native_link(host=True) if (
             os.name == "nt" and "clang" in os.path.basename(cc).lower() and toolchain.mingw(host=True)) else []
+        # (Windows keeps the math functions in the C runtime: an MSVC-target clang has no m.lib)
+        libm = [] if os.name == "nt" else ["-lm"]
         for march in ("x86-64-v3", "x86-64-v2"):
             exe = os.path.join(tmp, "fastfp_%s.exe" % march)
             r = subprocess.run([cc] + flags + ["-march=" + march, "-ffp-contract=off", "-fno-strict-aliasing", "-O2",
-                                               path, "-o", exe, "-lm"],
+                                               path, "-o", exe] + libm,
                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace")
             if r.returncode:
                 print(r.stdout[-3000:])
