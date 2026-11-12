@@ -44,6 +44,9 @@ int main(void) {
     n = 0;
     for (int i = 0; i < 4; i++) n += frame_whole(&w, b + 8, bits(1.25f), 1);   /* (the step times 3: its fractions kept) */
     CHECK(n == 5);
+    n = 0;
+    for (int i = 0; i < 144; i++) n += frame_whole(&w, b + 16, bits(2.0f * 60.0f / 144.0f), 1);
+    CHECK(n == 120 || n == 119);
     CHECK(frame_whole(&w, a, bits(0.42f), 0) == 0 && frame_whole(&w, a, bits(1.5f), 0) == 1 && frame_whole(&w, a, bits(2.0f), 0) == 2);
     CHECK(frame_whole(&w, a, bits(-1.0f), 1) == 0 && frame_whole(&w, a, bits(NAN), 1) == 0 && frame_whole(&w, a, bits(0.0f), 1) == 0);
     for (uint64_t k = 0; k < 100; k++) frame_whole(&w, 0x9000 + k, bits(0.5f), 1);   /* (more counters than slots: the oldest go) */
@@ -98,6 +101,16 @@ class FrameWholeTests(unittest.TestCase):
         _, old0, _ = oot_patches.WHOLE_SITES[0]
         hot = LIFTED[0].replace(old0, "    _v=a64_fpx_hot_mul32_fma32(c,_a,_b,_z);\n    a64_vset64(c->vreg[0],_v);}\n" + old0)
         self.assertEqual(oot_patches.patch_whole_frames(hot)[1], 1)
+
+    def test_clock_patches_its_seconds_alone(self):
+        i = next(i for i, (h, _, _) in enumerate(oot_patches.WHOLE_SITES) if "f_803edf70" in h)
+        cut = "    c->x[8]=recomp_fp_to_int(c->vreg[0][0]&UINT64_C(0xffffffff),32,32,1,3,c->fpcr,&c->fpsr);\n"
+        lifted = LIFTED[i].replace("return;\n", cut + "    recomp_store32(c,c->x[19] + 12,c->x[8]);\nreturn;\n")
+        out, n = oot_patches.patch_whole_frames(lifted)
+        self.assertEqual(n, 1)
+        self.assertIn("=hos_frame_whole(c->x[19] + 60, (uint32_t)c->vreg[0][0]);", out)
+        self.assertEqual(out.count(cut), 1)
+        self.assertIn(cut + "    recomp_store32(c,c->x[19] + 12,", out)
 
 
 if __name__ == "__main__":
