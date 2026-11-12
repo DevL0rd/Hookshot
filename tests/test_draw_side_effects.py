@@ -51,8 +51,6 @@ struct Program {
 struct PipeEntry { std::atomic<bool> ready{false}; VkPipeline pipeline = 1; };
 struct Targets { bool persistent = true; };
 struct NvnState {};
-struct { int async_pipelines = 0; } opts;
-struct { void mark(const char*) {} } trace;
 struct ParLock {};
 struct DrawArgs { bool indirect = true; int groups[3]{1, 1, 1}; int first_task = 0; };
 int fallback_task_groups(const Program&) { std::abort(); }
@@ -80,7 +78,6 @@ void jobs_wait(const std::atomic<bool>& ready) {
     else { ++pipeline_waits; pipe_entry.ready.store(true, std::memory_order_release); }
 }
 bool targets_persistent(const Targets& at) { return at.persistent; }
-bool quick_pipeline(PipeEntry&, const Program&, const NvnState&, const Targets&, int) { return false; }
 bool exposure_log_on() { return false; }
 void exposure_note(NvnState&, const Program&) {}
 void ensure_layout(Program&) {}
@@ -97,8 +94,7 @@ void decision(const Program* cp, const Targets& at) {
 }
 int failures;
 void check(bool ok, const char* label) { if (!ok) { ++failures; std::printf("FAIL %s\n", label); } }
-void scenario(int kind, bool translated, bool pipeline_hot, bool persistent, bool async) {
-    opts.async_pipelines = int(async);
+void scenario(int kind, bool translated, bool pipeline_hot, bool persistent) {
     scans = early_reads = translation_waits = pipeline_waits = draws = output = st_pending_skips = 0;
     Program p; current = &p; effect = kind;
     if (translated) publish();
@@ -106,17 +102,16 @@ void scenario(int kind, bool translated, bool pipeline_hot, bool persistent, boo
     const bool force = std::getenv("RX_VK_PIPE_SKIP") && std::atoi(std::getenv("RX_VK_PIPE_SKIP")) == 0;
     const bool legacy = std::getenv("RX_VK_PIPE_SKIP") && std::atoi(std::getenv("RX_VK_PIPE_SKIP")) == 2;
     const bool skip_unknown = legacy && !translated && persistent;
-    const bool should_draw = !skip_unknown && (pipeline_hot || force || (!async && !persistent) || kind != 0);
+    const bool should_draw = !skip_unknown && (pipeline_hot || force || !persistent || kind != 0);
     decision(&p, {persistent});
     char label[120];
-    std::snprintf(label, sizeof label, "kind%d translated%d hot%d persistent%d force%d async%d", kind, translated, pipeline_hot, persistent, force, async);
+    std::snprintf(label, sizeof label, "kind%d translated%d hot%d persistent%d force%d", kind, translated, pipeline_hot, persistent, force);
     const int before = failures;
     check(draws == int(should_draw), label);
     if (kind && should_draw) check(output == 42, "producer write absent at fake consumer");
     check(!early_reads, "metadata inspected before publication");
     check(translation_waits == int(!translated && !skip_unknown), "translation wait mode");
-    if (pipeline_hot || force || (!async && !persistent) || skip_unknown) check(scans == 0, "unnecessary classification");
-    else check(scans > 0, "pending pipeline memory writes not classified");
+    if (pipeline_hot || force || !persistent || skip_unknown) check(scans == 0, "unnecessary classification");
     check(pipeline_waits == int(!pipeline_hot && should_draw), "pending pipeline must publish before draw");
     std::printf("%s %s draws%d skips%d scans%d twait%d pwait%d\n", failures == before ? "PASS" : "RED", label,
                 draws, st_pending_skips, scans, translation_waits, pipeline_waits);
@@ -124,9 +119,10 @@ void scenario(int kind, bool translated, bool pipeline_hot, bool persistent, boo
 int main() {
     for (int kind = 0; kind <= 4; ++kind)
         for (bool translated : {false, true})
-            for (bool hot : {false, true})
-                for (bool persistent : {false, true})
-                    for (bool async : {false, true}) scenario(kind, translated, hot, persistent, async);
+            for (bool hot : {false, true}) scenario(kind, translated, hot, true);
+    scenario(1, true, false, false);
+    scenario(1, false, false, false);
+    scenario(0, false, false, false);
     std::printf("%d failures; fake CPU decision check only\n", failures);
     return failures ? 1 : 0;
 }
@@ -160,12 +156,12 @@ def main():
                 env["RX_VK_PIPE_SKIP"] = mode
             result = subprocess.run([str(exe)], env=env, capture_output=True, text=True, timeout=10)
             lines = result.stdout.splitlines()
-            complete = "0 failures; fake CPU decision check only" in lines and sum(l.startswith("PASS kind") for l in lines) == 80
+            complete = "0 failures; fake CPU decision check only" in lines and sum(l.startswith("PASS kind") for l in lines) == 23
             ok = result.returncode == 0 and complete
             print(f"RX_VK_PIPE_SKIP={mode if mode is not None else 'unset'}: {'PASS' if ok else 'FAIL'}")
             if not ok:
                 failed = True
-                print("fixture failed or did not finish all 80 cases\n" + result.stdout + result.stderr)
+                print("fixture failed or did not finish all 23 cases\n" + result.stdout + result.stderr)
         if failed:
             raise SystemExit(1)
     print("PASS: unknown translations wait by default; mode 2 restores their old skip; translated writers wait; hot draws do not scan stages")

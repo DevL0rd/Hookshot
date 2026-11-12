@@ -96,7 +96,6 @@ void ptr_diag_log(uint64_t key, const char* kind) {
 }
 } // namespace
 #include "vk_shader.h"
-#include "vk_stage_cache.h"
 #ifndef HOOKSHOT_ENV_H   // (env_on: the switches' one rule)
 #include "hookshot_env.h"
 #endif
@@ -168,26 +167,7 @@ Code read_code(const nvn_stage_data& sd) {
         snprintf(path, sizeof path, "%s/%016llx.bin", dir, (unsigned long long)code_key(ctl, area.data(), end));
         if (FILE* f = fopen(path, "wb")) fwrite(ctl, 1, sizeof ctl, f), fwrite(area.data(), 1, end, f), fclose(f);
     }
-    // Different NVN program serials often share exactly the same stages. Keep the
-    // lowering, not the program variant: texture-dependent translation still runs
-    // through the existing variant validation. Keep the existing stage reads
-    // above on every miss of the serial cache; never key this by guest addresses.
-    static const bool cache_on = !getenv("RX_VK_STAGE_CACHE") || atoi(getenv("RX_VK_STAGE_CACHE")) != 0;
-    if (!cache_on) return parse_code(ctl, area);
-    static thread_local StageCache<Code, kControlSize> cache(64u << 20);
-    static thread_local uint64_t hits = 0, misses = 0;
-    const uint64_t key = code_key(ctl, area.data(), end);
-    const Code* kept = cache.find(key, ctl, area);
-    if (kept) ++hits;
-    else ++misses;
-    if ((hits + misses) % 1024 == 0)
-        logf("vk: stage lowering cache: %llu hits, %llu misses, %zu bytes",
-             (unsigned long long)hits, (unsigned long long)misses, cache.bytes());
-    if (kept) return *kept;
-    Code result = parse_code(ctl, area);
-    if (result.ok) cache.insert(key, ctl, area, result,
-                               result.code.size() * sizeof(uint64_t) + result.c1.size());
-    return result;
+    return parse_code(ctl, area);
 }
 
 /// A control section and its code, from the game's memory or the archives (the seed)
@@ -877,14 +857,6 @@ uint64_t portable_variant(const Program& p) {
     return generated_stage(p) == SIZE_MAX ? p.variant : answers_hash_of(answers_portable(p));
 }
 namespace {
-/// What an unbound slot answers: the type its instruction declares (record_answers; program_find_plain looks for a variant whose
-/// slots all answer it)
-uint8_t declared_answer(const Program& p, size_t stage, size_t desc, bool image) {
-    const auto& info = p.stages[stage].info;
-    if (image) return (uint8_t)(info.image_descriptors[desc].is_integer ? 0x80 : 0);
-    const auto& d = info.texture_descriptors[desc];
-    return (uint8_t)((uint8_t)d.type | (d.is_integer ? 0x80 : 0));
-}
 // (an unbound slot answers what the instruction itself says: nothing to tell the variants apart by, and a program prepared before
 // the game, with nothing bound at all, comes out as the plain variant of each of its slots)
 void record_answers(Program& p, const NvnState& s) {
@@ -902,13 +874,14 @@ void record_answers(Program& p, const NvnState& s) {
         for (size_t i = 0; i < list.size(); i++)
             if (list[i].count == 1) {
                 const uint32_t h = descriptor_handle(s, p.stages[k], list[i]);
-                p.answers.push_back({(uint16_t)k, (uint16_t)i, h ? texture_answer(h) : declared_answer(p, k, i, false)});
+                p.answers.push_back({(uint16_t)k, (uint16_t)i,
+                                     h ? texture_answer(h) : (uint8_t)((uint8_t)list[i].type | (list[i].is_integer ? 0x80 : 0))});
             }
         const auto& images = p.stages[k].info.image_descriptors;
         for (size_t i = 0; i < images.size(); i++)
             if (images[i].count == 1) {
                 const uint32_t h = descriptor_handle(s, p.stages[k], images[i]);
-                p.answers.push_back({(uint16_t)k, (uint16_t)i, h ? answer_of(h, true) : declared_answer(p, k, i, true), true});
+                p.answers.push_back({(uint16_t)k, (uint16_t)i, h ? answer_of(h, true) : (uint8_t)(images[i].is_integer ? 0x80 : 0), true});
             }
     }
     for (Program::Answer& a : p.answers) a.type = canonical_answer(p, a, a.type);
@@ -1693,11 +1666,10 @@ const Program* mesh_program_locked(const NvnState& s, const uint8_t color_types[
     jobs_push([job] {
         translate_mesh_into(*job->p, job->s, job->has_task ? &job->task : nullptr, job->mesh,
                             job->has_prim ? &job->prim : nullptr, job->has_fs ? &job->fs : nullptr, job->ct);
-    }, true, &raw->ready, [job]() noexcept {
+    }, false, &raw->ready, [job]() noexcept {
         job->p->failed = true;
         job->p->ready.store(true, std::memory_order_release);
-    });   // (a waiting draw can run the job; failure completes it too. Urgent: ahead of the pipeline builds, so a
-          // draw left out for it shows once it and then its pipeline are made, not after every pipeline queued before it)
+    });   // (a waiting draw can run the job; failure completes it too)
     return raw;
 }
 
@@ -1714,7 +1686,7 @@ namespace {
 /// kept while the handles it was checked against are the same
 struct Pick {
     const Program* p = nullptr;
-    std::vector<uint32_t> handles;   // (full handles and their texture-slot versions, in answer order)
+    std::vector<uint32_t> handles;   // (at its answers' descriptors: their slots and the slots' versions)
 };
 thread_local std::unordered_map<uint64_t, Pick> picks;   // (each recording thread's: program_pick has its own lock)
 uint64_t pick_inputs(const NvnState& s, const uint8_t color_types[8]) {
@@ -1728,23 +1700,11 @@ uint64_t pick_inputs(const NvnState& s, const uint8_t color_types[8]) {
 void answer_handles(const NvnState& s, const Program& p, std::vector<uint32_t>& out) {
     out.clear();
     for (const Program::Answer& a : p.answers) {
-        const uint32_t handle = answer_handle(s, p, a);
-        out.push_back(handle);   // retain sampler-only handles: nonzero with texture slot zero is not unbound
-        out.push_back(texture_slot_version((int)(handle & 0xFFFFF)));
+        const uint32_t id = answer_handle(s, p, a) & 0xFFFFF;
+        out.push_back(id);
+        out.push_back(texture_slot_version((int)id));
     }
 }
-// The pick just resolved these handles to compare their slots and versions. Validate the
-// same submitted bindings without evaluating the descriptor programs a second time.
-bool resolved_answers_valid(const Program& p, const std::vector<uint32_t>& handles) {
-    if (handles.size() != p.answers.size() * 2) return false;
-    for (size_t i = 0; i < p.answers.size(); ++i) {
-        const auto& a = p.answers[i];
-        const uint32_t h = handles[i * 2];
-        if (h && canonical_answer(p, a, answer_of(h, a.image)) != canonical_answer(p, a, a.type)) return false;
-    }
-    return true;
-}
-
 } // namespace
 
 /// (hookshot) the bound program's stages and code keys, as "stage:key" words (RX_VK_SKIP_PROG's log)
@@ -1899,12 +1859,7 @@ const Program* program_for(const NvnState& s, ProgramKind kind, const uint8_t co
         answer_handles(s, *pk.p, now);
         if (now == pk.handles) return st_hit++, keep(pk.p);
         st_differ++;
-        static const bool reread = [] {
-            const char* capture = getenv("RX_VK_CAPTURE");
-            return env_on("RX_VK_PICK_REREAD") || env_on("RX_VK_HANDLES_LIVE") ||
-                   env_on("RX_VK_REGISTER_AT_ONCE") || (capture && atoi(capture) == 0);
-        }();
-        if (reread ? still_valid(s, *pk.p) : resolved_answers_valid(*pk.p, now)) {   // same types, same variant
+        if (still_valid(s, *pk.p)) {   // (other textures of the same types: the same variant)
             pk.handles.swap(now);
             return keep(pk.p);
         }
@@ -1973,11 +1928,11 @@ const Program* program_pick(const NvnState& s, ProgramKind kind, const uint8_t c
     job->p = raw, job->s = s, job->vs = *stage_code[0], job->has_fs = stage_code[1] != nullptr;
     if (job->has_fs) job->fs = *stage_code[1];
     std::memcpy(job->ct, color_types, 8);
-    jobs_push([job] { translate_into(*job->p, job->s, &job->vs, job->has_fs ? &job->fs : nullptr, nullptr, job->ct); }, true,
+    jobs_push([job] { translate_into(*job->p, job->s, &job->vs, job->has_fs ? &job->fs : nullptr, nullptr, job->ct); }, false,
               &raw->ready, [job]() noexcept {
                   job->p->failed = true;
                   job->p->ready.store(true, std::memory_order_release);
-              });   // (as the mesh one: a waiting draw runs it, not every job queued before it; ahead of the pipelines)
+              });   // (as the mesh one: a waiting draw runs it, not every job queued before it)
     return raw;
 }
 
@@ -2341,10 +2296,8 @@ std::unique_ptr<Program> seed_program_of(const uint64_t code[3], bool mesh, cons
     if (!by_stage[want[0]]) return nullptr;
     return seed_translate(by_stage, attributes, color_types, key_out);
 }
-/// (seed_variant_of, seed_plain_of) the variant translated with the questions and answers given, or with none: nothing bound, each
-/// slot answers what its instruction declares (as seed_translate's program), and the questions asked are noted
-static const Program* seed_variant_made(const uint64_t code[3], bool mesh, const uint32_t attributes[16], const uint8_t color_types[8],
-                                        const std::vector<uint8_t>* questions, const std::vector<Program::Answer>* answers) {
+const Program* seed_variant_of(const uint64_t code[3], bool mesh, const uint32_t attributes[16], const uint8_t color_types[8],
+                               const std::vector<uint8_t>& questions, const std::vector<Program::Answer>& answers) {
     const SeedStage* by_stage[8]{};
     const int want[3] = {mesh ? 7 : 0, 1, mesh ? 6 : -1};
     for (int k = 0; k < 3; k++) {
@@ -2374,7 +2327,7 @@ static const Program* seed_variant_made(const uint64_t code[3], bool mesh, const
     p->fallback = mesh && dev.uses_mesh_fallback(by_stage[6] != nullptr);
     p->mesh = mesh && !p->fallback;
     p->codes[0] = code[0], p->codes[1] = code[1], p->codes[2] = code[2];
-    if (questions) questions_in = questions, questions_at = 0, answers_in = answers;
+    questions_in = &questions, questions_at = 0, answers_in = &answers;
     struct Reset { ~Reset() { questions_in = nullptr, answers_in = nullptr; } } reset;
     if (mesh) translate_mesh_into(*p, *blank, by_stage[6] ? &code_of[6] : nullptr, code_of[7], nullptr, fs, color_types);
     else translate_into(*p, *blank, &code_of[0], fs, nullptr, color_types);
@@ -2395,13 +2348,6 @@ static const Program* seed_variant_made(const uint64_t code[3], bool mesh, const
     variants.push_back(std::move(p));
     return variants.back().get();
 }
-const Program* seed_variant_of(const uint64_t code[3], bool mesh, const uint32_t attributes[16], const uint8_t color_types[8],
-                               const std::vector<uint8_t>& questions, const std::vector<Program::Answer>& answers) {
-    return seed_variant_made(code, mesh, attributes, color_types, &questions, &answers);
-}
-const Program* seed_plain_of(const uint64_t code[3], bool mesh, const uint32_t attributes[16], const uint8_t color_types[8]) {
-    return seed_variant_made(code, mesh, attributes, color_types, nullptr, nullptr);
-}
 
 const Program* program_find_portable(uint64_t key, uint64_t variant) {
     std::lock_guard lk(shader_mu);
@@ -2409,28 +2355,6 @@ const Program* program_find_portable(uint64_t key, uint64_t variant) {
     if (it == programs.end()) return nullptr;
     for (auto& p : it->second)
         if (p->ready.load(std::memory_order_acquire) && !p->failed && portable_variant(*p) == variant) return p.get();
-    return nullptr;
-}
-const Program* program_find_plain(uint64_t key) {
-    std::lock_guard lk(shader_mu);
-    auto it = programs.find(key);
-    if (it == programs.end()) return nullptr;
-    for (auto& p : it->second) {
-        if (!p->ready.load(std::memory_order_acquire) || p->failed) continue;
-        // (an answer for each slot record_answers counts, each the type its instruction declares, as record_answers makes it with
-        // nothing bound: not a variant that asked nothing, which stands for any textures)
-        size_t slots = 0;
-        for (const Stage& st : p->stages) {
-            for (const auto& d : st.info.texture_descriptors) slots += d.count == 1;
-            for (const auto& d : st.info.image_descriptors) slots += d.count == 1;
-        }
-        bool plain = p->answers.size() == slots;
-        for (size_t i = 0; plain && i < p->answers.size(); i++) {
-            const Program::Answer& a = p->answers[i];
-            plain = answers_fit(*p, {a}) && a.type == canonical_answer(*p, a, declared_answer(*p, a.stage, a.desc, a.image));
-        }
-        if (plain) return p.get();
-    }
     return nullptr;
 }
 const Program* program_find(uint64_t key, uint64_t variant) {

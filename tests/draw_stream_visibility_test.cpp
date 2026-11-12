@@ -1,4 +1,3 @@
-struct StageTrace { template<class... T> StageTrace(T...) {} void mark(const char*) {} };
 #define _CRT_SECURE_NO_WARNINGS
 #include <vulkan/vulkan.h>
 #include <algorithm>

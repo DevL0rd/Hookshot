@@ -34,8 +34,6 @@
 #include <vector>
 
 #include "vk_texture.h"
-#include "vk_thread_affinity.h"
-#include "vk_stage_trace.h"
 #include "vk_menu.h"
 #include "vk_draw.h"
 #include "vk_gprof.h"
@@ -51,7 +49,6 @@
 #include "host_shaders/bc_encoder_comp_spv.h"
 #include "bc_levels.h"
 #include "astc_bc_policy.h"
-#include "drawn_writeback.h"
 #include "vram_compact.h"
 #include "evict_reason.h"
 #include "keep_rendered.h"
@@ -429,7 +426,6 @@ std::mutex gpu_wrote_mu;
 bool gpu_wrote_into(Texture& tex);
 namespace {
 Staging staging(uint64_t n, uint64_t align = 256) {
-    SlowStageTrace trace("slow_staging");
     // Separate slices may already be read by submitted parallel segments. A flush must not share their cache atom.
     align = std::max<uint64_t>(align, dev.props.limits.nonCoherentAtomSize);
     for (Arena& a : arenas) {   // the current one first, then any whose readers completed
@@ -449,7 +445,6 @@ Staging staging(uint64_t n, uint64_t align = 256) {
             return {a.buffer, 0, a.mapped, a.allocation};
         }
     }
-    trace.mark("search_arenas");
     Arena a;
     void* m = nullptr;
     const auto make = [&](uint64_t size) {
@@ -476,7 +471,6 @@ Staging staging(uint64_t n, uint64_t align = 256) {
                  small ? "one of the size asked for instead" : "the upload waits");
         if (!small) return {};
     }
-    trace.mark("create_buffer");
     {   // (hookshot: what making a staging arena costs the replay thread: on a card with resizable BAR it is VRAM the driver hands
         // out, and a scene change made several right after the idle ones were freed)
         const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t_make).count();
@@ -887,7 +881,6 @@ LevelGeo level_geo(const Texture& tex, uint32_t level) {   // (level: the image'
 
 /// The guest bytes [gpu, gpu + n) in host memory: in place when contiguous, else copied into scratch
 const uint8_t* guest_bytes(uint64_t gpu, uint64_t n, std::vector<uint8_t>& scratch) {
-    SlowStageTrace trace("slow_guest_texture_bytes");
     uint64_t avail = 0;
     const uint8_t* p = host->gpu_ptr(gpu, &avail);
     // (below 1 TB the GPU address is the guest's: the storage as it was at the submit being replayed, where the game has
@@ -904,10 +897,7 @@ const uint8_t* guest_bytes(uint64_t gpu, uint64_t n, std::vector<uint8_t>& scrat
                 if (!host->gpu_read(gpu + at, scratch.data() + at, std::min<uint64_t>(0x10000, b - at)))
                     std::memset(scratch.data() + at, 0, std::min<uint64_t>(0x10000, b - at));
         };
-        for (uint32_t t = 1; t < nt; t++) pool.emplace_back([&, t] {
-            background_thread_affinity(host->reserved_cpus ? host->reserved_cpus() : 0);
-            part(t);
-        });
+        for (uint32_t t = 1; t < nt; t++) pool.emplace_back(part, t);
         part(0);
         for (std::thread& t : pool) t.join();
         return scratch.data();
@@ -956,7 +946,6 @@ VkImageView astc_level_view(Texture* tex, uint32_t level, uint32_t layer) {
 thread_local const char* astc_fail = nullptr;
 
 bool upload_astc_gpu(Texture& tex, uint64_t total, const Ranges* dirty) {
-    SlowStageTrace trace("slow_astc_upload");
     astc_fail = nullptr;
     if (tex.type != VK_IMAGE_TYPE_2D || tex.samples != VK_SAMPLE_COUNT_1_BIT || !astc_ready()) {
         astc_fail = "not a 2D image the GPU decoder takes";
@@ -1133,7 +1122,6 @@ bool unswizzle_ready() {
 
 /// The whole texture (every level and layer dirty overlaps) unswizzled on the GPU; false: not a texture for it
 bool upload_unswizzle_gpu(Texture& tex, uint64_t total, const Ranges* dirty) {
-    SlowStageTrace trace("slow_gpu_unswizzle_upload");
     if (tex.type != VK_IMAGE_TYPE_2D || tex.astc || tex.bc || !(tex.usage & VK_IMAGE_USAGE_STORAGE_BIT) ||
         is_bc(tex.format) || is_astc(tex.format) || is_depth_format(tex.format) || nvn_tex_is_linear(&tex.d))
         return false;
@@ -1483,7 +1471,6 @@ bool upload_all_zero(Texture& tex, uint64_t total, const Ranges* dirty, bool wid
     return true;
 }
 bool upload_inner(Texture& tex, const Ranges* dirty) {
-    SlowStageTrace trace("slow_texture_upload");
     PROF(PROF_UPLOAD);
     if (!tex.gpu || tex.samples != VK_SAMPLE_COUNT_1_BIT) return false;
     const uint64_t total = tex.guest_size;
@@ -1507,15 +1494,12 @@ bool upload_inner(Texture& tex, const Ranges* dirty) {
                  (unsigned long long)tex.first_seen);
         }
     }
-    trace.mark("validate_upload");
     if (tex.astc && (up_route = UP_ASTC, upload_astc_gpu(tex, total, dirty))) return true;
-    trace.mark("astc_gpu_attempt");
     up_route = UP_CPU;
     if (tex.bc) return false;   // (no CPU path into BC3)
     // (the GPU's unswizzle reads guest memory as it is: not where the capture kept the storage as it was at its submit)
     if (!(tex.gpu < (1ull << 40) && memory_has_shadow(tex.gpu, total)) && upload_unswizzle_gpu(tex, total, dirty))
         return up_route = UP_GPU, true;
-    trace.mark("gpu_unswizzle_attempt");
     const bool linear = nvn_tex_is_linear(&tex.d);
     int widen_from = 0;
     widened(tex.d.format ? vk_format(tex.nvn_format).format : tex.format, &widen_from);
@@ -1560,14 +1544,12 @@ bool upload_inner(Texture& tex, const Ranges* dirty) {
                 }
             }
             for (const auto& [row0, nrow] : runs) {
-                SlowStageTrace row_trace("slow_cpu_upload_run");
                 const uint32_t y0 = row0 * rows_per;                       // (blocks)
                 const uint32_t th = std::min(g.th - y0, nrow * rows_per);   // (blocks)
                 const uint64_t block_bytes = (uint64_t)g.tw * th * g.td * src_bpb;
                 const uint32_t px_h = std::min(g.h - y0 * (uint32_t)tex.block_h, th * (uint32_t)tex.block_h);
                 const uint64_t out_bytes = tex.astc ? (uint64_t)g.w * px_h * g.d * 4 : (uint64_t)g.tw * th * g.td * out_bpb;
                 const Staging st = staging((out_bytes + 15) & ~15ull, 16);
-                row_trace.mark("staging_acquire");
                 if (!st.buffer) return false;
                 if (buffer && st.buffer != buffer && !copies.empty()) {   // (a new arena: copy what the last one holds)
                     texture_resident_flush(&tex);
@@ -1579,7 +1561,6 @@ bool upload_inner(Texture& tex, const Ranges* dirty) {
                 buffer = st.buffer;
                 uint8_t* out = st.data;
                 uint8_t* blocks = (tex.astc || widen_from) ? (lin.resize(block_bytes), lin.data()) : out;
-                row_trace.mark("flush_previous_and_prepare");
                 if (linear) {
                     const uint64_t row = (uint64_t)g.tw * src_bpb;
                     const uint8_t* src = guest_bytes(tex.gpu + src_off, (uint64_t)stride * (g.th - 1) + row, scratch);
@@ -1607,7 +1588,6 @@ bool upload_inner(Texture& tex, const Ranges* dirty) {
                         if (from < total) host->gpu_read(tex.gpu + from, scratch.data(), total - from);
                         src = scratch.data();
                     }
-                    row_trace.mark("source_bytes");
                     const auto u0 = std::chrono::steady_clock::now();
                     if (nthreads > 1) {
                         const uint64_t out_row = (uint64_t)g.tw * rows_per * src_bpb;   // (bytes per GOB-block row)
@@ -1639,10 +1619,7 @@ bool upload_inner(Texture& tex, const Ranges* dirty) {
                             }
                         };
                         std::vector<std::thread> pool;
-                        for (uint32_t t = 1; t < nthreads; t++) pool.emplace_back([&, t] {
-                            background_thread_affinity(host->reserved_cpus ? host->reserved_cpus() : 0);
-                            part(t);
-                        });
+                        for (uint32_t t = 1; t < nthreads; t++) pool.emplace_back(part, t);
                         part(0);
                         for (std::thread& t : pool) t.join();
                         static const bool check = env_on("RX_VK_UNSWIZZLE_CHECK");   // (against one thread)
@@ -1664,7 +1641,6 @@ bool upload_inner(Texture& tex, const Ranges* dirty) {
                     st_unswizzle_ns +=
                         std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - u0).count();
                 }
-                row_trace.mark("copy_or_unswizzle");
                 if (tex.astc) {
                     Tegra::Texture::ASTC::DecompressSerial(std::span<const uint8_t>(blocks, block_bytes), g.w, px_h, g.d,
                                                            (u32)tex.block_w, (u32)tex.block_h,
@@ -1672,7 +1648,6 @@ bool upload_inner(Texture& tex, const Ranges* dirty) {
                 } else if (widen_from) {
                     widen_rows(out, blocks, (size_t)g.tw * th * g.td, src_bpb, out_bpb);
                 }
-                row_trace.mark("decode_or_widen");
                 st_bytes += (int64_t)out_bytes;
                 // (a sparse image: only its blocks this holds texels other than zero get memory; the others read
                 // zero unbound, and what the copy writes into them is dropped)
@@ -1733,7 +1708,6 @@ bool upload_inner(Texture& tex, const Ranges* dirty) {
             }
         }
     }
-    trace.mark("cpu_runs_inclusive");
     if (!copies.empty()) {
         texture_resident_flush(&tex);
         checkpoint_mark(upload_cmd(), tex.gpu, 'u');
@@ -3045,9 +3019,6 @@ struct Flush {
     VmaAllocation alloc = nullptr;
     void* map = nullptr;
     bool ok = false;
-    bool only_untouched = false;   // (drawn_writeback.h: only into memory still all zero, or holding its own last write-back)
-    bool touched = false;          // (and it was neither, or a guest thread wrote it during the write: the CPU's, nothing written)
-    uint64_t written_hash = 0;     // (and when written: the hash of its memory as the write left it)
 };
 // (cached host memory, which the CPU reads: the sequential-write kind is write-combined, or VRAM behind the BAR, and every read
 // of it by the unswizzle goes over PCIe uncached. RX_VK_FLUSH_UNCACHED=1: as before)
@@ -3055,10 +3026,8 @@ bool flush_uncached() {
     static const bool uncached = env_on("RX_VK_FLUSH_UNCACHED");
     return uncached;
 }
-/// The copies of f's image into a staging buffer of its own, recorded into cmd (rb_cmd, begun by the caller, when none is
-/// given); false: nothing recorded
-bool flush_record(Flush& f, VkCommandBuffer cmd = VK_NULL_HANDLE) {
-    if (!cmd) cmd = rb_cmd;
+/// The copies of f's image into a staging buffer of its own, recorded into rb_cmd (begun by the caller); false: nothing recorded
+bool flush_record(Flush& f) {
     Texture& t = *f.t;
     const uint32_t layers = t.type == VK_IMAGE_TYPE_3D ? 1 : t.layers;
     for (uint32_t level = 0; level < t.levels; level++) {
@@ -3086,28 +3055,8 @@ bool flush_record(Flush& f, VkCommandBuffer cmd = VK_NULL_HANDLE) {
         r.imageExtent = {p.g.w, p.g.h, p.g.d};
         c.push_back(r);
     }
-    vkCmdCopyImageToBuffer(cmd, t.image, VK_IMAGE_LAYOUT_GENERAL, f.buf, (uint32_t)c.size(), c.data());
+    vkCmdCopyImageToBuffer(rb_cmd, t.image, VK_IMAGE_LAYOUT_GENERAL, f.buf, (uint32_t)c.size(), c.data());
     return f.ok = true;
-}
-/// [gpu, gpu + n) of guest memory from `from` to `to`, only where it still holds `from` (drawn_writeback::swap_words; went
-/// and only as there, n bytes each): false when a guest thread wrote some of it meanwhile, or it is not mapped
-bool guest_swap(uint64_t gpu, const uint8_t* from, const uint8_t* to, uint64_t n, uint8_t* went = nullptr,
-                const uint8_t* only = nullptr) {
-    bool all = true;
-    for (uint64_t at = 0; at < n;) {
-        uint64_t avail = 0;
-        uint8_t* p = host->gpu_ptr(gpu + at, &avail);
-        if (!p || !avail) {
-            all = false;
-            break;
-        }
-        const uint64_t k = std::min(avail, n - at);
-        all &= drawn_writeback::swap_words(p, from + at, to + at, (size_t)k, went ? went + at : nullptr, only ? only + at : nullptr) == 0;
-        host->mark_written(p, k);   // (as host->gpu_write does: the soft write watch)
-        at += k;
-    }
-    guest_cpu_wrote(gpu, n);
-    return all;
 }
 /// The CPU half, once the batch's read-back completed (gpu_ok) or failed: the texels into the texture's memory, the buffer freed
 bool flush_finish(Flush& f, bool gpu_ok) {
@@ -3118,16 +3067,6 @@ bool flush_finish(Flush& f, bool gpu_ok) {
     void* map = f.map;
     bool ok = f.ok && gpu_ok;
     if (ok && !flush_uncached()) invalidate_mapped(f.alloc, total);
-    // (only_untouched: the memory as it is now, whatever the page generations know of it yet. The texels are staged
-    // against this snapshot and go in at the end, compared with it word by word: publish below)
-    std::vector<uint8_t> was, staged;
-    struct Piece { uint64_t gpu, at, n; };   // (staged[at, at + n) for guest memory at gpu)
-    std::vector<Piece> pieces;
-    if (ok && f.only_untouched) {
-        was.resize((size_t)t.guest_size);
-        if (!host->gpu_read(t.gpu, was.data(), was.size()) || !drawn_writeback::may_write(was.data(), was.size(), t.written_back_hash))
-            ok = false, f.touched = true;
-    }
     if (ok && total <= 64) {   // (RX_VK_LOG_TINY_FLUSH=1: the values of tiny ones, 400 lines: a 1 x 1 luminance)
         static const bool log_tiny = env_on("RX_VK_LOG_TINY_FLUSH");
         static int logged;
@@ -3155,46 +3094,17 @@ bool flush_finish(Flush& f, bool gpu_ok) {
         const uint8_t* src = whole_src + (from - whole_gpu);
         const uint64_t lo = gpu - t.gpu, hi = lo + n;
         bool w = true;
-        const auto put = [&](uint64_t off, const uint8_t* bytes, uint64_t len) {
-            if (!f.only_untouched) return guest_cpu_write(t.gpu + off, bytes, len) != 0;
-            pieces.push_back({t.gpu + off, staged.size(), len});
-            staged.insert(staged.end(), bytes, bytes + len);
-            return true;
-        };
         uint64_t at = lo;
         for (const auto& [a, b] : cpu_runs) {
             if (b <= at) continue;
             if (a >= hi) break;
-            if (a > at) w &= put(at, src + (at - lo), a - at);
+            if (a > at) w &= guest_cpu_write(t.gpu + at, src + (at - lo), a - at) != 0;
             kept_cpu += std::min(b, hi) - std::max(a, at);
             at = std::max(at, b);
             if (at >= hi) break;
         }
-        if (at < hi) w &= put(at, src + (at - lo), hi - at);
+        if (at < hi) w &= guest_cpu_write(t.gpu + at, src + (at - lo), hi - at) != 0;
         return w;
-    };
-    // (only_untouched) the staged texels into memory: the snapshot once more, since the unswizzle took its time, then
-    // each word only where it still is as the snapshot has it. A word a guest thread wrote meanwhile stays, and then
-    // the words that did go in (those only) come out again: either all of the texture's texels are in its memory, or
-    // the memory is as the guest has it
-    const auto publish = [&] {
-        if (!ok || !f.only_untouched) return;
-        std::vector<uint8_t> again(was.size());
-        bool same = host->gpu_read(t.gpu, again.data(), again.size()) && again == was;
-        if (same) {
-            std::vector<uint8_t> went(staged.size());   // (the bytes that went in: the undo takes out those only)
-            for (const Piece& p : pieces)
-                same &= guest_swap(p.gpu, was.data() + (p.gpu - t.gpu), staged.data() + p.at, p.n, went.data() + p.at);
-            if (!same)
-                for (const Piece& p : pieces)
-                    guest_swap(p.gpu, staged.data() + p.at, was.data() + (p.gpu - t.gpu), p.n, nullptr, went.data() + p.at);
-        }
-        if (!same) {
-            ok = false, f.touched = true;
-            return;
-        }
-        for (const Piece& p : pieces) std::memcpy(again.data() + (p.gpu - t.gpu), staged.data() + p.at, (size_t)p.n);
-        f.written_hash = drawn_writeback::hash(again.data(), again.size());
     };
     const auto log_kept = [&] {
         static int logged;
@@ -3213,7 +3123,6 @@ bool flush_finish(Flush& f, bool gpu_ok) {
                 if (!write_back(t.gpu + off, (const uint8_t*)map + p.at + (uint64_t)y * row, row)) ok = false;
             }
         }
-        publish();
         log_kept();
         if (f.buf) destroy_buffer(f.buf, f.alloc);
         return ok;
@@ -3225,15 +3134,12 @@ bool flush_finish(Flush& f, bool gpu_ok) {
             if (p.g.offset + (uint64_t)p.layer * t.L.layer_size >= t.guest_size) continue;
             const uint64_t span = std::min<uint64_t>(p.g.swizzled, t.guest_size - p.g.offset - (uint64_t)p.layer * t.L.layer_size);
             sw.assign(std::max<uint64_t>(p.g.swizzled, span), 0);
-            // (what is there: the padding between texels kept)
-            if (f.only_untouched) std::memcpy(sw.data(), was.data() + (at - t.gpu), (size_t)span);
-            else host->gpu_read(at, sw.data(), span);
+            host->gpu_read(at, sw.data(), span);   // (what is there: the padding between texels kept)
             Tegra::Texture::SwizzleTexture(std::span<uint8_t>(sw.data(), sw.size()),
                                            std::span<const uint8_t>((const uint8_t*)map + p.at, p.n), (u32)t.bpb, p.g.tw,
                                            p.g.th, p.g.td, p.g.tile_h, p.g.tile_d, 1);
             if (!write_back(at, sw.data(), span)) ok = false;   // (marks the pages written: textures over them upload)
         }
-        publish();
         log_kept();
     }
     if (f.buf) destroy_buffer(f.buf, f.alloc);
@@ -3273,157 +3179,6 @@ bool flush_texture(Texture& t, uint64_t clip_lo, uint64_t clip_hi) {
     one.push_back(Flush{&t, clip_lo, clip_hi});
     flush_textures(one);
     return one[0].ok;
-}
-// (hookshot) Small mip-chained textures the GPU drew in one frame: their texels into their memory, from two frames later
-// (drawn_writeback.h has the rule and why: OoT copies a drawn terrain tile's memory on the CPU, and the copy was all
-// zero). Nothing waits for the GPU: a frame's batch has its copies recorded with the present's uploads, and a later
-// frame writes the texels once the GPU is past that recording (a wait here took the frame 3 to 8 ms, and 232 ms behind
-// an area load's uploads). RX_VK_NO_DRAWN_WRITEBACK=1: as before
-std::mutex drawn_mu;
-std::vector<std::pair<uint64_t, Texture*>> drawn_noted;   // (storage, texture: drawn_mu)
-struct DrawnBatch {
-    uint64_t value;   // (the recording its copies are in)
-    uint64_t frame;
-    std::vector<Flush> fs;
-    struct Was { uint32_t id; uint64_t last_written; };   // (each texture as it was then: the same one, not drawn since)
-    std::vector<Was> was;
-};
-std::deque<DrawnBatch> drawn_batches;
-constexpr size_t kDrawnBatches = 4;   // (open at once: with the GPU that far behind, the textures due wait)
-bool drawn_writeback_on() {
-    static const bool on = !env_on("RX_VK_NO_DRAWN_WRITEBACK");
-    return on;
-}
-void drawn_writeback_note(Texture* tex) {
-    if (tex->writeback_noted || !drawn_writeback_on() || !drawn_writeback::noted(tex->gpu, tex->guest_size, tex->levels)) return;
-    tex->writeback_noted = true;
-    std::lock_guard lk(drawn_mu);
-    drawn_noted.push_back({tex->gpu, tex});
-}
-bool drawn_alive(uint64_t gpu, const Texture* t) {   // (not destroyed since it was listed)
-    auto [a, b] = by_gpu.equal_range(gpu);
-    for (auto it = a; it != b; ++it)
-        if (it->second == t) return true;
-    return false;
-}
-/// For each texture (nullptr: skipped), the newest drawing into another image whose storage overlaps its own; 0 for none
-std::vector<uint64_t> drawn_others(const std::vector<const Texture*>& ts) {
-    std::vector<uint64_t> other(ts.size(), 0);
-    for (const auto& kv : textures) {   // (from any start: a scratch heap's targets overlap at other offsets)
-        const Texture* o = kv.second.get();
-        if (!o->gpu_written || !o->guest_size) continue;
-        for (size_t i = 0; i < ts.size(); i++) {
-            const Texture* t = ts[i];
-            if (t && o != t && o->gpu < t->gpu + t->guest_size && o->gpu + o->guest_size > t->gpu)
-                other[i] = std::max(other[i], o->last_written);
-        }
-    }
-    return other;
-}
-/// The batches the GPU is done copying: their texels into memory, where the texture is still as it was copied
-void drawn_writeback_finish() {
-    static int64_t batches, done, failed, left_cpu, dropped, bytes;
-    static double all_ms;
-    while (!drawn_batches.empty() && drawn_batches.front().value <= completed_value) {
-        DrawnBatch batch = std::move(drawn_batches.front());
-        drawn_batches.pop_front();
-        const auto t0 = std::chrono::steady_clock::now();
-        std::vector<const Texture*> ts;
-        for (size_t i = 0; i < batch.fs.size(); i++) {
-            const Texture* t = batch.fs[i].t;   // (clip_lo is its storage: the pointer is looked at only once found there)
-            ts.push_back(drawn_alive(batch.fs[i].clip_lo, t) && t->id == batch.was[i].id ? t : nullptr);
-        }
-        const std::vector<uint64_t> other = drawn_others(ts);
-        int64_t wrote = 0;
-        const Texture* first = nullptr;
-        for (size_t i = 0; i < batch.fs.size(); i++) {
-            Flush& f = batch.fs[i];
-            // (drawn or uploaded over since the copy, or another image drawn over its storage: the copy is not its content)
-            if (!ts[i] || !f.t->gpu_written || f.t->only_cleared || f.t->last_written != batch.was[i].last_written ||
-                (other[i] && other[i] >= f.t->last_written)) {
-                if (f.buf) destroy_buffer(f.buf, f.alloc);
-                dropped++;
-                continue;
-            }
-            f.ok = flush_finish(f, true);
-            f.t->written_back_for = f.t->last_written;   // (written, or the CPU's memory now: not tried again for this drawing)
-            if (!f.ok) {
-                (f.touched ? left_cpu : failed)++;
-                continue;
-            }
-            done++, wrote++, bytes += (int64_t)f.t->guest_size;
-            f.t->written_back_hash = f.written_hash;   // (its own texels there, for the next drawing's write-back)
-            if (!first) first = f.t;
-        }
-        const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
-        all_ms += ms;
-        if (batches++ < 12 || batches % 200 == 0)
-            logf("vk: %lld of %zu small textures the GPU drew written into their memory in %.1f ms, %llu frames after their copies "
-                 "were recorded, the first #%u %#llx %ux%u levels %u NVN %#x (%lld so far, %lld KB, %.0f ms; %lld left, the CPU wrote "
-                 "their memory since; %lld dropped, drawn over or gone; %lld failed)", (long long)wrote, batch.fs.size(), ms,
-                 (unsigned long long)(frame_no - batch.frame), first ? first->id : 0, (unsigned long long)(first ? first->gpu : 0),
-                 first ? first->width : 0, first ? first->height : 0, first ? first->levels : 0, first ? first->nvn_format : 0,
-                 (long long)done, (long long)(bytes >> 10), all_ms, (long long)left_cpu, (long long)dropped, (long long)failed);
-    }
-}
-void drawn_writeback_frame() {
-    drawn_writeback_finish();
-    if (drawn_batches.size() >= kDrawnBatches) return;
-    std::vector<std::pair<uint64_t, Texture*>> noted;
-    {
-        std::lock_guard lk(drawn_mu);
-        noted.swap(drawn_noted);
-    }
-    if (noted.empty()) return;
-    std::vector<std::pair<uint64_t, Texture*>> wait, cands;
-    std::vector<const Texture*> ts;
-    for (const auto& e : noted)
-        if (drawn_alive(e.first, e.second)) cands.push_back(e), ts.push_back(e.second);
-    const std::vector<uint64_t> other = drawn_others(ts);
-    DrawnBatch batch{rec_value, frame_no, {}, {}};
-    for (size_t i = 0; i < cands.size(); i++) {
-        Texture* t = cands[i].second;
-        const drawn_writeback::When when = drawn_writeback::due(frame_no, t->first_written, t->last_written, t->written_back_for,
-                                                                t->gpu_written, t->only_cleared, other[i]);
-        if (when == drawn_writeback::When::Wait) {
-            wait.push_back(cands[i]);
-            continue;
-        }
-        t->writeback_noted = false;
-        if (when == drawn_writeback::When::Now && flushable(*t)) {
-            Flush f{t, t->gpu, t->gpu + t->guest_size};
-            f.only_untouched = true;
-            batch.fs.push_back(std::move(f));
-        }
-    }
-    if (!wait.empty()) {
-        std::lock_guard lk(drawn_mu);
-        drawn_noted.insert(drawn_noted.end(), wait.begin(), wait.end());
-    }
-    if (batch.fs.empty()) return;
-    // (the copies, in this present's recording with its uploads, as the compaction's are: the drawings are two frames
-    // back, in recordings before it)
-    VkCommandBuffer cmd = upload_cmd();
-    full_barrier(cmd, "drawn write-back: before the copies");
-    std::vector<Flush> recorded;
-    for (Flush& f : batch.fs) {
-        if (!flush_record(f, cmd)) continue;   // (no staging memory: its texels stay out of memory, as before this)
-        f.t->last_value = std::max(f.t->last_value, rec_value);   // (its end, if it goes now, waits for the copy too)
-        batch.was.push_back({f.t->id, f.t->last_written});
-        recorded.push_back(std::move(f));
-    }
-    batch.fs = std::move(recorded);
-    if (batch.fs.empty()) return;
-    VkMemoryBarrier2 b{VK_STRUCTURE_TYPE_MEMORY_BARRIER_2};   // (the copies' writes, for the host)
-    b.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-    b.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
-    b.dstStageMask = VK_PIPELINE_STAGE_2_HOST_BIT;
-    b.dstAccessMask = VK_ACCESS_2_HOST_READ_BIT;
-    VkDependencyInfo d{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
-    d.memoryBarrierCount = 1;
-    d.pMemoryBarriers = &b;
-    vkCmdPipelineBarrier2(cmd, &d);
-    drawn_batches.push_back(std::move(batch));
 }
 } // namespace
 
@@ -3510,7 +3265,7 @@ void texture_written(Texture* tex, const char* why) {
         if (logged++ < 20) logf("vk: sparse texture %#llx written by the GPU (#%u)", (unsigned long long)tex->gpu, tex->id);
     }
     watch_tex(tex, "written");
-    if (!tex->gpu_written || tex->released) tex->first_written = frame_no, drawn_writeback_note(tex);
+    if (!tex->gpu_written || tex->released) tex->first_written = frame_no;
     tex->last_written = frame_no;
     tex->gpu_written = true;
     tex->gpu_gen = memory_generation();
@@ -4045,7 +3800,6 @@ uint64_t preset_texture_budget(uint64_t preset_mb, bool preset_applies, bool vra
 }
 
 void texture_frame(uint64_t completed) {
-    StageTrace trace("texture_frame", frame_no + 1);
     upload_frame_report();
     frame_upload_ns.store(0, std::memory_order_relaxed);
     if (const int64_t d = st_deferred_frame.exchange(0, std::memory_order_relaxed)) {
@@ -4059,7 +3813,6 @@ void texture_frame(uint64_t completed) {
     }
     completed_value = completed;
     frame_no++;
-    drawn_writeback_frame();
     {   // (staging arenas the GPU is done with, beyond 256 MB of them, and any over 64 MB: freed. A scene change stages
         // hundreds of MB to over a GB (the course maps, the terrain's ASTC arrays), and that host memory was kept)
         // (hookshot: 64 on a card of 6 GB or less. On one with resizable BAR the arenas are VRAM: VMA puts a host-visible buffer the GPU
@@ -4125,11 +3878,8 @@ void texture_frame(uint64_t completed) {
 #endif
         }
     }
-    trace.mark("staging_housekeeping");
     bc_scratch_idle();
-    trace.mark("scratch_idle");
     compact_step(completed);   // (hookshot, RX_VK_COMPACT: while its pass is open nothing of the textures' pool is freed)
-    trace.mark("compaction");
     for (auto it = dead.begin(); it != dead.end();) {
         if (compact.in_pass) break;   // (hookshot, RX_VK_COMPACT: nothing is freed while a pass is open; a frame or two)
         if (it->value > completed) {
@@ -4147,7 +3897,6 @@ void texture_frame(uint64_t completed) {
         for (VkDeviceMemory m : it->memory) vkFreeMemory(dev.device, m, nullptr);
         it = dead.erase(it);
     }
-    trace.mark("deferred_destroy");
     pool_trim();
     // A budget: RX_VK_VRAM_MB of textures (default 4096), and less when the driver says the process is near what it
     // may have (other programs use the GPU too). The least recently used go first, down to 7/8 of it; nothing the
@@ -4241,7 +3990,6 @@ void texture_frame(uint64_t completed) {
         budget = std::min(budget, total_bytes > over ? total_bytes - over : 0);
         rule_budget = std::min(rule_budget, total_bytes > over ? total_bytes - over : 0);
     }
-    trace.mark("budget_query");
     const uint64_t rule_to = vram_compact::rule_target(total_bytes, rule_budget);
     // (hookshot, RX_VK_COMPACT: the driver's limit asks for more than the reserve does: a pass over the budget, to 7/8 of it, as
     // before. Rare once the reserve is set: its line is 17 points under the limit's and counts the textures' free space out, so
@@ -4331,7 +4079,6 @@ void texture_frame(uint64_t completed) {
         logf("vk: verify %ux%u: %d textures, %d changed since uploaded, %d of them unnoticed", verify_dim().first,
              verify_dim().second, checked, changed, missed);
     }
-    trace.mark("diagnostics_verify");
     static const bool no_evict = env_on("RX_VK_NO_EVICT");   // (an experiment: nothing evicted)
     // (hookshot) under the budget, every 600 presents: the render targets drawn over since (below), unused for 120
     const bool sweep = total_bytes <= budget;
@@ -4418,7 +4165,6 @@ void texture_frame(uint64_t completed) {
         if (g == gpu_owned.end() || g->second.first != tex->gpu + std::max<uint64_t>(tex->guest_size, 1)) return false;
         return !drawn_over(tex) && !drawn_over_shifted(tex);
     };
-    trace.mark("eviction_order");
     uint64_t finalized_kept = 0;
     size_t finalized_kept_n = 0;
     if (keep_finalized_max)
@@ -4440,7 +4186,6 @@ void texture_frame(uint64_t completed) {
         logf("vk: finalized textures the GPU drew once, kept for being made again: %zu (%llu KB):%s", finalized_kept_n,
              (unsigned long long)(finalized_kept >> 10), n ? line : "");
     }
-    trace.mark("finalized_scan");
     const uint64_t need_unused = sweep ? std::max<uint64_t>(120, min_unused) : min_unused;
     const uint64_t need_dead = dead_targets ? std::min(need_unused, dead_min_unused) : need_unused;
     static uint64_t n_dead, b_dead, dead_logged_at;
@@ -4593,12 +4338,10 @@ void texture_frame(uint64_t completed) {
         forget_gpu(tex);
         gone.insert(tex);
     }
-    trace.mark("eviction_select_flush");
     for (auto it = textures.begin(); it != textures.end() && !gone.empty();) {
         if (gone.erase(it->second.get())) it = textures.erase(it);
         else ++it;
     }
-    trace.mark("erase_retired");
     if (n_dead && frame_no >= dead_logged_at + 600) {   // (the dead transient targets let go so far, every 600 presents)
         dead_logged_at = frame_no;
         logf("vk: render targets drawn over from another start, let go: %llu so far (%llu MB)", (unsigned long long)n_dead,

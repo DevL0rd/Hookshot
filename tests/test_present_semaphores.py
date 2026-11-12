@@ -53,7 +53,6 @@ fixture = r'''
 #include <set>
 #include <cstdint>
 #include <cstdio>
-#include <cstdlib>
 #include <utility>
 #include <atomic>
 #include <mutex>
@@ -141,12 +140,6 @@ bool create_swapchain(unsigned width,unsigned height) {
 }
 bool reflex_swapchain_stale() {return stale;}
 int menu_vsync() {return 0;}   // (vk_menu.cpp: the V-Sync row, Auto)
-struct StageTrace { StageTrace(const char*, int) {} void mark(const char*) {} };
-struct PresentStageSample {
-    enum Stage { Lock };
-    PresentStageSample(bool, int64_t) {} void mark(Stage) {}
-};
-int64_t prof_now() { return 0; }
 int swapchain_framegen() {return 0;}   // (vk_main.cpp: frame generation's multiplier as the swapchain was made, none)
 bool swapchain_dlssg() {return false;}   // (vk_main.cpp: and DLSS-G makes its sets: no)
 std::mutex present_image_mu;

@@ -315,7 +315,6 @@ HDR, Detail, and GPU and memory (last: the rows to change when something is wron
 | | Anisotropic filtering | Game's, 2x, 4x, 8x, 16x | 16x |
 | | GPU device | Auto, or each graphics card by name (after a restart) | Auto |
 | | VRAM budget | Auto, 3.6, 4.8, 6, 7.5, 9, 11 GB (2.2 GB only from the Minimum (4GB) preset); a quality preset sets it | Auto |
-| | Shader compile | Wait where needed, Asynchronous | Wait where needed |
 | Audio | Volume | 0 to 100%, in steps of 5 | 100% |
 | | Mute in background | Off, On | Off |
 | | Audio output | Auto, Stereo, 5.1 (after a restart) | Auto |
@@ -424,12 +423,6 @@ HDR, Detail, and GPU and memory (last: the rows to change when something is wron
   Off. On waits for each refresh (FIFO): no tearing, at most the display's rate. Off shows each frame at once and can
   tear (where the driver cannot, it is Auto). It changes at once. `RX_VK_FIFO=1` (On) or `RX_VK_IMMEDIATE=1` (Off) chooses
   for one run.
-- **Shader compile** is what a draw does the first time its shader or pipeline is still being built. With **Wait where
-  needed**, the default, a draw whose picture the last frame can fill in is left out for a frame or two, and one into a
-  new or cleared picture
-  waits for a quick build without the driver's optimizer (the full build replaces it shortly after). **Asynchronous**
-  skips pending attachment-only pipelines even into a new or cleared picture. Shader translation and memory-writing
-  draws still wait. An effect can be missing for a few frames, and one drawn only once can look wrong until it is drawn again.
 - **Robust buffers** (Debug tab, Developer): a read past a buffer's end is dropped instead of stopping the GPU. Auto is
   on, on every card; Off can be faster on some NVIDIA cards.
 - **ASTC as RGBA8** (Debug tab, Developer): the AMD texture workaround below.

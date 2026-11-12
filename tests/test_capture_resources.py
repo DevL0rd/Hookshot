@@ -36,8 +36,7 @@ def main():
     fixture = fixture.replace("/* ACTUAL_RECORDING */", source[start:end])
     with tempfile.TemporaryDirectory(prefix="capture-resources-") as temp:
         cpp, exe = Path(temp) / "fixture.cpp", Path(temp) / "fixture.exe"
-        prefix = '#include "' + str(ROOT / 'gpu/vk/vk_capture_size.h') + '"\nusing namespace mkwvk;\n'
-        cpp.write_text(prefix + fixture, encoding="utf-8")
+        cpp.write_text(fixture, encoding="utf-8")
         subprocess.run([a.cxx, "-std=c++20", "-Wall", "-Wextra", "-Werror", "-Wno-missing-field-initializers",
                         "-I" + str(a.headers), str(cpp), "-o", str(exe)], check=True)
         subprocess.run([str(exe)], check=True, timeout=30)
