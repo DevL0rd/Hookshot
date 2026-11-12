@@ -1,8 +1,10 @@
 {
   "upstream": "https://github.com/NotRexed/Hookshot",
-  "upstream_base": "ddafc1f9df3c34e6971d29b12ab6de5d55696685",
+  "upstream_base": "ef81aee767f848255ca08171bba33b8c40c79347",
+  "previous_upstream_base": "ddafc1f9df3c34e6971d29b12ab6de5d55696685",
   "fork": "https://github.com/DevL0rd/Hookshot",
   "branch": "playthrough-fixes",
+  "updated_at": "2026-11-12",
   "included": [
     {
       "pr": 2114,
@@ -14,8 +16,8 @@
     {
       "pr": 1541,
       "url": "https://github.com/NotRexed/Hookshot/pull/1541",
-      "head": "733d71a84c20180ad9af7a41addebf9347983bae",
-      "merge_commit": "061d067a53b47dd415a63525513438d7eb54154b",
+      "head": "131b0a34cf2e56ed857c4f9c76af49eaaf80e9c1",
+      "merge_commit": "a6361e64b8b8cf401225eebad8d82ad0b13ee182",
       "purpose": "Renderer CPU reuse, affinity and bounded diagnostics"
     },
     {
@@ -26,38 +28,115 @@
       "purpose": "Prefer hot memory pools for VRAM mirrors"
     },
     {
+      "pr": 1946,
+      "url": "https://github.com/NotRexed/Hookshot/pull/1946",
+      "head": "aeb130ed784e1f200a8d1e138d6cf1b01926ae6c",
+      "merge_commit": "4409b418059b665c1f17a4170181d4c232c7e64b",
+      "purpose": "Quick pipelines and Shader compile option"
+    },
+    {
+      "pr": 2134,
+      "url": "https://github.com/NotRexed/Hookshot/pull/2134",
+      "head": "8f3910d125e467446f04f470ed49404ddff6087d",
+      "merge_commit": "6f1deac09e7775338287f78e02e694382fd13bdb",
+      "purpose": "Plain-variant preparation and additional pipeline states"
+    },
+    {
+      "pr": 2306,
+      "url": "https://github.com/NotRexed/Hookshot/pull/2306",
+      "head": "50579babdd522d50460b4b0f9859f2964819322b",
+      "merge_commit": "d7ea6951a00568f2b74e7f7d7015c65027d6e4b0",
+      "purpose": "Native NVIDIA float atomic adds"
+    },
+    {
+      "pr": 2433,
+      "url": "https://github.com/NotRexed/Hookshot/pull/2433",
+      "head": "1e6b7a2fdee8290a013195623dd5c445111fd5ca",
+      "merge_commit": "874b2aa8f5a81b999cbdcef62c6cb788a29863c5",
+      "purpose": "Guarded fast float regions in translated CPU code"
+    },
+    {
+      "pr": 2487,
+      "url": "https://github.com/NotRexed/Hookshot/pull/2487",
+      "head": "969bc80260ac2841d0b60e0f455aa7bf4577c044",
+      "merge_commit": "3ef735f23d82c570fb055fc28014e6b3bd46791c",
+      "purpose": "Linux condition-variable and priority fast paths"
+    },
+    {
+      "pr": 2545,
+      "url": "https://github.com/NotRexed/Hookshot/pull/2545",
+      "head": "9c5302e929e64ab13eb2f2e863729d639e66e166",
+      "merge_commit": "7afd483fc8ecb6b54b2fc2d9208311a9cf2cc8f2",
+      "purpose": "Asynchronous writeback of drawn terrain tiles"
+    },
+    {
+      "pr": 2540,
+      "url": "https://github.com/NotRexed/Hookshot/pull/2540",
+      "head": "a1579d4e4d5f2896800c96217e76bb4c0f21cd11",
+      "merge_commit": "7023ab015cafc3ebb25e21131319f6c159e1908d",
+      "purpose": "Keep Linux launcher game processes in their own scope"
+    },
+    {
+      "pr": 2093,
+      "url": "https://github.com/NotRexed/Hookshot/pull/2093",
+      "head": "7bc9019105dbea5921be4c70f998be874a753ba8",
+      "merge_commit": "e2bf4d31d759b79d585c6ecab42509ba7cd7d7dc",
+      "purpose": "Correct day-clock progression above 60 FPS"
+    },
+    {
+      "pr": 2575,
+      "url": "https://github.com/NotRexed/Hookshot/pull/2575",
+      "head": "964b030998df717271368dfe18ef572c65268463",
+      "merge_commit": "bd0e8694f6ae95fb1729ee795f5f210f1de9cf35",
+      "purpose": "Honor disabled high-FPS logging switches"
+    }
+  ],
+  "upstreamed": [
+    {
       "pr": 1961,
       "url": "https://github.com/NotRexed/Hookshot/pull/1961",
       "head": "d67f85587d752238f1a879f782cf9c20b76cd9af",
       "merge_commit": "568dd7ba90c32c5b03ca47e252e0c55bead083a8",
-      "purpose": "Prepared stage-library lookup and cache-save policy"
-    },
-    {
-      "pr": 1946,
-      "url": "https://github.com/NotRexed/Hookshot/pull/1946",
-      "head": "27d9136bbbb8f32f39c852c263d6746667963c6b",
-      "merge_commit": "8e302f2cf516e28af9199475d3b4f7b6192e4c89",
-      "purpose": "Quick pipelines and Shader compile option"
+      "purpose": "Prepared stage-library lookup and cache-save policy",
+      "upstream_commit": "845370c7693b0e616a6e48cbf54ecdceb4e2ee5b"
     },
     {
       "pr": 2133,
       "url": "https://github.com/NotRexed/Hookshot/pull/2133",
       "head": "87814a2eb25c4bff83f03f06910d8bc2a76d9e94",
       "merge_commit": "910c7ff86bf8e970ca223806b085ef4373df2de7",
-      "purpose": "Converted pipeline-state contribution"
-    },
-    {
-      "pr": 2134,
-      "url": "https://github.com/NotRexed/Hookshot/pull/2134",
-      "head": "f5761e2eb8282038af9be05d28529da883e8cf21",
-      "merge_commit": "c702e314d224055f0b7190ccd694ef7d7e03f1a1",
-      "purpose": "Plain-variant preparation and additional pipeline states"
+      "purpose": "Converted pipeline-state contribution",
+      "upstream_commit": "b8fd5fdbc28b1b1272ab82a7742f89467152c5af"
     }
   ],
-  "excluded": [
+  "local_adjustments": [
     {
-      "pr": 1009,
-      "reason": "Reduces texture detail to relieve low-VRAM pressure; preserve image quality."
+      "commit": "c6bc22311ed59f046c1d412babdfdac31452627c",
+      "purpose": "Preserve previous texture quality unless RX_VK_LOW_VRAM_MIPS is explicitly enabled",
+      "related_pr": 1009
+    },
+    {
+      "commit": "90b9dd2014aa4a753084134e3b42fe7c74b3e602",
+      "purpose": "Use atomic accesses for the fast-float enable cache",
+      "related_pr": 2433
+    },
+    {
+      "commit": "7c4534472067a61902fceb74b32d43bdbbc1c8ba",
+      "purpose": "Adapt retained renderer switches to the upstream on/off helper"
+    },
+    {
+      "commit": "e07fd4227ad6ebd73a12a9d7e90c979cef4c3c73",
+      "purpose": "Preserve upstream first frame timestamp before diagnostic tracing"
+    },
+    {
+      "commit": "043e2e290e54bfe4d3a260ba4cd1b459285e2d33",
+      "purpose": "Keep combined renderer fixture dependencies and safety assertions current"
     }
-  ]
+  ],
+  "quality_policy": {
+    "pr": 1009,
+    "state": "present upstream; automatic quality reduction disabled by fork default",
+    "enable": "RX_VK_LOW_VRAM_MIPS=1",
+    "default": "Previous texture limits retained"
+  }
 }
