@@ -42,4 +42,4 @@ Build matching game and renderer binaries and run required checks before publish
 
 ## Validation
 
-The conservative source passed independent composition review and the existing full suite: 455 passed, 0 failed, 20 skipped (175 seconds). The removed PRs' own checks were removed with their source; official-main checks and retained changes remain covered. Native build and installation results will be recorded after completion.
+The conservative source passed independent composition review and the existing full suite: 455 passed, 0 failed, 20 skipped (175 seconds). The removed PRs' own checks were removed with their source; official-main checks and retained changes remain covered. The official Linux release build completed in 565 seconds (426-second compile phase), reusing 327 objects and compiling 159, with no failures or missing dynamic libraries. It ships 29,688 pipeline states. Matching game and renderer binaries were built from `af7ffa0740b97209ac3af43045fe142e19ae8394`. Shader preparation and gameplay were not run during this work. The changed translator triggers preparation at the next normal launch.
