@@ -167,7 +167,9 @@ def check_paths():
             "framegen_scale(f.cmd, view, src, sw, sh, crop, rect.w, rect.h, native_pq)" not in image:
         sys.exit("FAIL: present_image can blit Native HDR's picture from its image, or scales it as SDR")
     shot = present[present.index("const VkImage fx_img ="):]
-    if "kShotW, kShotH,\n" not in shot[:shot.index(";")] or "present_native_pq.load(" not in shot[:shot.index(";")]:
+    fx_call = shot[:shot.index(";")]
+    if "src, sw, sh, crop, shot_size.w, shot_size.h," not in fx_call or "present_native_pq.load(" not in fx_call or \
+            "shot_size = capture_size(sw, sh, crop, kShotW, kShotH, output);" not in present:
         sys.exit("FAIL: the RX_VK_SHOT_FX shot scales Native HDR's picture as SDR")
     check_dlss()
     check_fsr4()

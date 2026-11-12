@@ -51,6 +51,7 @@ static void AcquireSRWLockExclusive(SRWLOCK *) {}
 static void ReleaseSRWLockExclusive(SRWLOCK *) {}
 typedef struct { char pat[40]; long long value; } NameSpec;
 '''
+fixture += '\n' + (ROOT / 'gpu/vk/compat/hookshot_env.h').read_text()
 for marker in ('static int parse_name_specs(', 'static const NameSpec *match_name_spec(',
                'static int render_thread_on_reserved(', 'void hos_thread_pin('):
     fixture += '\n' + block(source, marker)
@@ -65,7 +66,7 @@ int main(int argc, char **argv) {
     assert(applied == strtoull(argv[4], nullptr, 16));
 }
 '''
-env = {k: v for k, v in os.environ.items() if k not in ('HOS_PIN', 'HOS_PIN_RENDER', 'RX_VK_ASYNC', 'HOS_PRIO')}
+env = {k: v for k, v in os.environ.items() if k not in ('HOS_PIN', 'HOS_PIN_RENDER', 'RX_VK_ASYNC', 'HOS_PRIO', 'HOS_OCB_NORMAL')}
 with tempfile.TemporaryDirectory() as directory:
     path = Path(directory)
     (path / 'test.cpp').write_text(fixture)

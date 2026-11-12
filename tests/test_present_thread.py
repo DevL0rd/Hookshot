@@ -48,7 +48,7 @@ def main():
          "a present made directly may go out before the one handed over, or waits for it with the queue's lock held")
 
     image = block(replay, "void present_image(")
-    need("present_copy_done = f.done;\n    present_out(index, qk);\n    present_copy_done = VK_NULL_HANDLE;" in image,
+    need("present_copy_done = f.done;\n    stages.shown = present_out(index, qk);\n    present_copy_done = VK_NULL_HANDLE;" in image,
          "present_image does not let its present (and only it) be handed over")
     for site in ("reflex_swapchain_stale() || hdr_changed || vsync_changed) {", "if (res == VK_ERROR_OUT_OF_DATE_KHR) {"):
         at = image[image.index(site):]
