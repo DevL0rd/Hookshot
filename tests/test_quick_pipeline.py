@@ -5,7 +5,7 @@ game/GPU).
 quick_pipeline is compiled as it is in vk_draw.cpp, beside a stand-in driver that has the pipeline compiled, has to compile
 it, or cannot make it, and a worker whose full build lands while the stand-in is built: the full build is never run in the
 draw, a stand-in never replaces a full build, and one that lost the race is destroyed. The source checks cover the rest of
-the change: the stand-in's build flags and caches, the Shader compile row (Asynchronous by default), the translation
+the change: the stand-in's build flags and caches, the Shader compile row (Wait where needed by default), the translation
 jobs ahead of the pipeline builds, and the workers' count.
 python -I -B tests/test_quick_pipeline.py
 """
@@ -103,6 +103,33 @@ int main(int argc, char** argv) {
 """
 
 
+PERSIST_FIXTURE = r"""
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+struct Texture { uint64_t first_render_frame = 0, cleared_frame = 0; };
+struct Targets { int n = 0; Texture* color[8] = {}; Texture* depth = nullptr; };
+static uint64_t now_frame = 10;
+uint64_t texture_frame_no() { return now_frame; }
+@CODE@
+#define CHECK(c) do { if (!(c)) { std::printf("FAIL line %d: %s\n", __LINE__, #c); std::exit(1); } } while (0)
+int main() {
+    Texture c, d;
+    Targets at; at.n = 1; at.color[0] = &c; at.depth = &d;
+    c.first_render_frame = 5, d.first_render_frame = 5;
+    CHECK(targets_persistent(at));                            // (rendered before, not cleared: the last frame's picture fills in)
+    c.cleared_frame = 10, d.cleared_frame = 10;
+    CHECK(!targets_persistent(at));                           // (both cleared whole this frame: nothing earlier is left)
+    d.cleared_frame = 9;
+    CHECK(targets_persistent(at));                            // (the depth cleared last frame only: it kept this frame's draws' picture)
+    c.cleared_frame = 0, c.first_render_frame = 10, d.cleared_frame = 10;
+    CHECK(!targets_persistent(at));                           // (colour made this frame, depth cleared this frame)
+    Targets bare; CHECK(!targets_persistent(bare));           // (no targets)
+    return 0;
+}
+"""
+
+
 def between(text, start, end="\n}\n"):
     a = text.index(start)
     return text[a:text.index(end, a)]
@@ -114,14 +141,26 @@ def check_source(draw, shader, jobs, menu, menu_h):
                           "VkPrimitiveTopology topo, int part, bool* cold) {")
     if "if (noopt || quick_build) ci.flags |= VK_PIPELINE_CREATE_DISABLE_OPTIMIZATION_BIT;" not in build:
         raise SystemExit("build_graphics: a quick build is not made without the driver's optimizer")
-    if "(part < 0 && !driver_cache_only && !quick_build) ? pcache : VK_NULL_HANDLE" not in build or \
+    if ("const VkPipelineCache cache = quick_build ? VK_NULL_HANDLE :\n"
+        "        (lib_cached || (part < 0 && !driver_cache_only) ? pcache : driver_ask_cache);") not in build or \
             "pcache_built_since_save += !driver_cache_only && !quick_build;" not in build:
         raise SystemExit("build_graphics: a quick build goes into the pipeline cache (the start's or a play file would keep it)")
     body = between(draw, "void draw(VkCommandBuffer cmd, NvnState& s, const DrawArgs& d) {")
-    if "const bool may_skip = !always_wait && (opts.async_pipelines != 0 || targets_persistent(at));" not in body:
+    if "const bool may_skip = !always_wait && (opts.async_pipelines != 0 || targets_persistent(at)) && !writes_memory(p);" not in body:
         raise SystemExit("draw: the Shader compile row does not decide whether a draw may be left out")
+    translation = between(body, "if (!cp->ready.load(std::memory_order_acquire)) {", "\n    }")
+    if 'static const bool legacy_translation_skip = getenv("RX_VK_PIPE_SKIP") && atoi(getenv("RX_VK_PIPE_SKIP")) == 2;' not in body:
+        raise SystemExit("draw: untranslated draw skipping is not restricted to explicit legacy mode")
+    if "if (legacy_translation_skip && targets_persistent(at)) return void(st_pending_skips++);" not in translation or \
+            "wait_for(cp->ready);" not in translation or "opts.async_pipelines" in translation:
+        raise SystemExit("draw: unknown shader writes can be skipped outside explicit legacy mode")
     if "if (!quick_pipeline(*pe, p, s, at, topo)) wait_for(pe->ready);" not in body:
         raise SystemExit("draw: a draw that has to wait for its pipeline does not get a quick one first")
+    # (a target cleared whole this frame kept no earlier picture: both clears say so, targets_persistent reads it)
+    if "at.color[index]->cleared_frame = texture_frame_no();" not in between(draw, "void clear_color_target("):
+        raise SystemExit("clear_color_target: a whole clear does not mark the target cleared this frame")
+    if "at.depth->cleared_frame = texture_frame_no();" not in between(draw, "void clear_depth_stencil("):
+        raise SystemExit("clear_depth_stencil: a whole depth clear does not mark the target cleared this frame")
     if '#include "vk_menu.h"' not in draw:
         raise SystemExit("vk_draw.cpp reads opts without vk_menu.h")
     if "job->e->pipeline = full;" not in between(draw, "PipeEntry* graphics_pipeline("):
@@ -136,8 +175,8 @@ def check_source(draw, shader, jobs, menu, menu_h):
     if 'return v ? "Asynchronous" : "Wait where needed";' not in menu:
         raise SystemExit("vk_menu.cpp: the Shader compile row's values are not Wait where needed and Asynchronous")
     # (out of the box a draw waits where it must, as before the row: Asynchronous can leave a pass drawn once wrong)
-    if "int async_pipelines = 1;" not in menu_h:
-        raise SystemExit("vk_menu.h: Shader compile is not Asynchronous by default")
+    if "int async_pipelines = 0;" not in menu_h:
+        raise SystemExit("vk_menu.h: Shader compile is not Wait where needed by default")
 
 
 def main():
@@ -158,7 +197,14 @@ def main():
         env = {k: v for k, v in os.environ.items() if k != "RX_VK_QUICK_WAIT"}
         subprocess.run([str(exe)], check=True, timeout=60, env=env)
         subprocess.run([str(exe), "off"], check=True, timeout=60, env=dict(env, RX_VK_QUICK_WAIT="0"))
-    print("PASS: a waiting draw's pipeline comes from a cache or a quick build, and the full build takes its place")
+        persist = between(draw, "bool targets_persistent(const Targets& at) {") + "\n}\n"
+        src2 = Path(tmp) / "targets_persistent.cpp"
+        exe2 = Path(tmp) / "targets_persistent"
+        src2.write_text(PERSIST_FIXTURE.replace("@CODE@", persist), encoding="utf-8")
+        subprocess.run([args.cxx, "-std=c++20", "-Wall", "-Wextra", "-Werror", str(src2), "-o", str(exe2)], check=True)
+        subprocess.run([str(exe2)], check=True, timeout=60)
+    print("PASS: a waiting draw's pipeline comes from a cache or a quick build, and the full build takes its place; "
+          "a target cleared this frame is not left to the last frame's picture")
 
 
 if __name__ == "__main__":

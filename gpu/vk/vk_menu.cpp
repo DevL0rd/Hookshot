@@ -749,7 +749,8 @@ MENU_HINTS(hn_mesh_mode, 0, "The GPU's own mesh shaders where it has them, the c
            "The GPU's own mesh shaders for every draw. A GPU without them still uses the compute path.",
            "The compute path on every GPU: try it if your card crashes or leaves objects out. Usually a little slower.")
 MENU_HINTS(hn_shader_compile, 0,
-           "Left out for a frame or two where the last frame's picture fills in; into a new picture it waits for a quick build.",
+           "Left out for a frame or two where the last frame's picture fills in; into a new or cleared picture it waits for a "
+           "quick build.",
            "Pending attachment-only pipelines do not wait. Translation and memory-writing draws still wait. An effect can be "
            "missing for a few frames, and one drawn only once can look wrong until it is drawn again.")
 MENU_HINTS(hn_fps, 0, nullptr, "The frame rate. With frame generation on, the game's own rate too.",

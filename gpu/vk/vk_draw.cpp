@@ -4043,11 +4043,15 @@ Targets bare_targets(const NvnState& s, Targets at) {
 }
 
 /// Whether the targets of a draw kept a picture from an earlier frame (a draw left out of them shows for one frame)
+/// (hookshot) A target cleared whole this frame kept none: OoT clears its scene's colour and depth every frame, and with a
+/// cold pipeline cache the field's draws were left out of them as "rendered before", so the cleared depth showed through and
+/// the lighting read it as sky, a white wash for seconds on the first field load. Cleared this frame counts as made this frame
 bool targets_persistent(const Targets& at) {
     const uint64_t now = texture_frame_no();
+    const auto kept = [now](const Texture* t) { return t && t->first_render_frame && t->first_render_frame < now && t->cleared_frame != now; };
     for (int i = 0; i < at.n; i++)
-        if (at.color[i] && at.color[i]->first_render_frame && at.color[i]->first_render_frame < now) return true;
-    return at.depth && at.depth->first_render_frame && at.depth->first_render_frame < now;
+        if (kept(at.color[i])) return true;
+    return kept(at.depth);
 }
 
 void begin_pass(VkCommandBuffer cmd, const Targets& at) {
@@ -4639,6 +4643,9 @@ void clear_color_target(VkCommandBuffer cmd, NvnState& s, int index, const float
     const VkRect2D rect = clear_rect(s, lw, lh);
     if (!rect.extent.width || !rect.extent.height) return;
     st_clears++, pass().clears++;
+    // (hookshot: cleared whole, every channel and the whole picture: nothing of an earlier frame is left in it)
+    if (mask == 0xF && !rect.offset.x && !rect.offset.y && rect.extent.width >= lw && rect.extent.height >= lh && at.color[index])
+        at.color[index]->cleared_frame = texture_frame_no();
     if (mask == 0xF) {
         VkClearAttachment ca{};
         ca.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -4690,6 +4697,10 @@ void clear_depth_stencil(VkCommandBuffer cmd, NvnState& s, float depth, bool dep
     vkCmdClearAttachments(cmd, 1, &ca, 1, &cr);
     pass().written |= 1u << 8;
     st_clears++, pass().clears++;
+    // (hookshot: the depth cleared over the whole target: no earlier frame's depth is left, targets_persistent)
+    if ((aspect & VK_IMAGE_ASPECT_DEPTH_BIT) && !rect.offset.x && !rect.offset.y && rect.extent.width >= at.width &&
+        rect.extent.height >= at.height)
+        at.depth->cleared_frame = texture_frame_no();
 }
 
 void clear_stats(int64_t* clears, int64_t* masked) {
