@@ -3143,7 +3143,7 @@ size_t mirror_swap_pick(const uint64_t* bytes, const uint64_t* heat, size_t coun
 }
 void mirrors_swap_for_hot() {   // (pools_mu held)
     static const bool on = (!getenv("RX_VK_MIRROR_HEAT") || atoi(getenv("RX_VK_MIRROR_HEAT")) != 0) &&
-                           !getenv("RX_VK_FOLLOW_STORES");
+                           !env_on("RX_VK_FOLLOW_STORES");
     if (!on || mirror_wanted.empty()) return;
     static uint64_t last_swap;
     if (mirror_epoch - last_swap < 16) return;

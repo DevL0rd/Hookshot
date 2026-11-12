@@ -1901,8 +1901,8 @@ const Program* program_for(const NvnState& s, ProgramKind kind, const uint8_t co
         st_differ++;
         static const bool reread = [] {
             const char* capture = getenv("RX_VK_CAPTURE");
-            return getenv("RX_VK_PICK_REREAD") || getenv("RX_VK_HANDLES_LIVE") ||
-                   getenv("RX_VK_REGISTER_AT_ONCE") || (capture && atoi(capture) == 0);
+            return env_on("RX_VK_PICK_REREAD") || env_on("RX_VK_HANDLES_LIVE") ||
+                   env_on("RX_VK_REGISTER_AT_ONCE") || (capture && atoi(capture) == 0);
         }();
         if (reread ? still_valid(s, *pk.p) : resolved_answers_valid(*pk.p, now)) {   // same types, same variant
             pk.handles.swap(now);
