@@ -243,9 +243,9 @@ def check_c(cc):
         fail("the C region was not made fast")
     # (the test resets the enable cache between cases: a hook the real header doesn't need)
     header = L.FASTFP_HEADER.replace(
-        "static int a64_ff_enabled_(void) { static int v = -1; if (v < 0) v = !getenv(\"HOS_NO_FASTFP\"); return v; }",
-        "static int a64_ff_v_ = -1;\nstatic void a64_ff_enabled_cache_reset(void) { a64_ff_v_ = -1; }\n"
-        "static int a64_ff_enabled_(void) { if (a64_ff_v_ < 0) a64_ff_v_ = !getenv(\"HOS_NO_FASTFP\"); return a64_ff_v_; }")
+        "static int a64_ff_v_ = -1;",
+        "static int a64_ff_v_ = -1;\n"
+        "static void a64_ff_enabled_cache_reset(void) { __atomic_store_n(&a64_ff_v_, -1, __ATOMIC_RELAXED); }")
     if "a64_ff_enabled_cache_reset" not in header:
         fail("FASTFP_HEADER's enable test changed: update the test's hook")
     src = DRIVER % {"header": header, "region": text}

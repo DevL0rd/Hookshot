@@ -773,7 +773,15 @@ FASTFP_HEADER = r"""
 #if RECOMP_FPX_HOST == 2 && defined(__x86_64__) && !defined(__EMSCRIPTEN__)
 #include <stdlib.h>
 #include <stdio.h>
-static int a64_ff_enabled_(void) { static int v = -1; if (v < 0) v = !getenv("HOS_NO_FASTFP"); return v; }
+static int a64_ff_v_ = -1;
+static int a64_ff_enabled_(void) {
+    int v = __atomic_load_n(&a64_ff_v_, __ATOMIC_RELAXED);
+    if (v < 0) {
+        v = !getenv("HOS_NO_FASTFP");
+        __atomic_store_n(&a64_ff_v_, v, __ATOMIC_RELAXED);
+    }
+    return v;
+}
 #define A64_FF_ON(c) (RECOMP_FPX_OPEN(c) && a64_ff_enabled_())
 /* MXCSR: exceptions masked, round to nearest, DAZ off, FTZ as FPCR.FZ, flags cleared; the old value returned */
 static inline __attribute__((always_inline)) unsigned a64_ff_begin(const Ctx *c) {
