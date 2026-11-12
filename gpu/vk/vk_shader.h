@@ -142,6 +142,9 @@ const Program* seed_variant_of(const uint64_t code[3], bool mesh, const uint32_t
 /// (hookshot) The variant nothing bound makes (each texture as its instruction declares it), kept the same way: what a state list
 /// record with variant 0 and no answers or questions stands for (one converted from records that hold no texture answers)
 const Program* seed_plain_of(const uint64_t code[3], bool mesh, const uint32_t attributes[16], const uint8_t color_types[8]);
+/// (hookshot) That variant if it is loaded and ready: every slot answering the type its instruction declares. Its own variant is
+/// the hash of those answers, not 0, so program_find_portable(key, 0) does not find it (state_list_prepare looks here first)
+const Program* program_find_plain(uint64_t key);
 /// The NVN stages of the bound program, for logs (stage field of each control section)
 void log_program_stages(const NvnState& s, const char* why);
 Shader::AttributeType attribute_type_of(uint32_t vattr);

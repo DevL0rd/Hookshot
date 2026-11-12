@@ -1724,8 +1724,10 @@ void state_list_prepare(void (*progress)(size_t done, size_t total), bool open_s
         for (size_t i = 0; i < recs.size(); i++) {
             const StateRec& r = recs[i];
             const uint64_t key = want[rec_program[i]].key;
+            // (a plain record: the variant nothing bound makes has the hash of its answers, not 0, so it is looked up by them:
+            // loaded from the program cache already, it is not translated, and saved, again)
             if (key && (r.nanswers || r.nquestions || plain(r)) && !program_find_portable(key, r.variant) &&
-                seen.insert(mix(key, r.variant)).second)
+                !(plain(r) && program_find_plain(key)) && seen.insert(mix(key, r.variant)).second)
                 variant_of.push_back(i), plain_wanted += plain(r);
         }
     }
@@ -1769,9 +1771,10 @@ void state_list_prepare(void (*progress)(size_t done, size_t total), bool open_s
         const uint64_t key = want[rec_program[i]].key;
         if (!key) continue;
         const Program* p = program_find_portable(key, r.variant);
-        if (!p && plain(r)) {
+        if (!p && plain(r)) {   // (made now, or loaded from the program cache)
             const auto it = plain_of.find(key);
-            if (it != plain_of.end()) p = it->second, noted_plain++;
+            p = it != plain_of.end() ? it->second : program_find_plain(key);
+            noted_plain += p != nullptr;
         }
         if (!p) {
             no_variant++;
