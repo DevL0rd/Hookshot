@@ -4704,8 +4704,8 @@ void submit(const uint64_t* handles, int n) {
     submit_q(handles, n, 0);
 }
 void present(const nvn_tex* t, const int crop[4]) {
-    StageTrace trace("present_api", 0);
     fps_presented();   // (the FPS counter: the game's frame ends here, on its presenting thread)
+    StageTrace trace("present_api", 0);
     FpsRender fr;
     if (!async_on()) {
         std::lock_guard order(sync_order_mu);
