@@ -1886,7 +1886,7 @@ uint64_t texture_level_units(uint32_t w, uint32_t h, uint32_t d, uint32_t bw, ui
 bool low_vram_texture_mips() {
     static const bool disabled = [] {
         const char* e = getenv("RX_VK_LOW_VRAM_MIPS");
-        return e && env_value_off(e);
+        return !e || env_value_off(e);
     }();
     // A driver budget, sampled once, not the card's physical capacity. The
     // preset is checked for each texture so changing it in the menu still works.

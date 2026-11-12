@@ -1,7 +1,7 @@
 """Execute the sampled ASTC mip policy with real NVN/Vulkan types, without a GPU or game.
 
-Catch missing low-budget trimming, ignored overrides, stale preset defaults and
-on/off spellings that accidentally keep the automatic quality reduction enabled.
+Catch unintended default quality reduction, missing opt-in low-budget trimming,
+ignored overrides, stale preset defaults and incorrect on/off spellings.
 """
 import argparse
 import os
@@ -121,6 +121,25 @@ int main(int argc, char** argv) {
          {"RX_VK_TEX_MAX_DIM": "512", "RX_VK_TEX_SKIP_MB": "2"}, (3, 384, 9, 2, 341, 9), 0),
         ("threshold-without-dimension-override", 2, 3674, 1,
          {"RX_VK_TEX_SKIP_MB": "2"}, (1, 1536, 11, 0, 1365, 11), 0),
+    ]
+    cases = [("enabled-" + name, preset, budget, query,
+              {"RX_VK_LOW_VRAM_MIPS": "1", **overrides}, expected, switch)
+             for name, preset, budget, query, overrides, expected, switch in cases]
+    cases += [
+        ("default-minimum-small-budget", 1, 3674, 1, {}, original, 0),
+        ("default-budget-at-4.5-GiB", 1, 4608, 1, {}, original, 0),
+        ("default-budget-above-4.5-GiB", 1, 4609, 1, {}, original, 0),
+        ("default-large-budget", 1, 7500, 1, {}, original, 0),
+        ("default-zero-budget", 1, 0, 1, {}, original, 0),
+        ("default-failed-budget-query", 1, 3674, 0, {}, original, 0),
+        ("default-custom-preset", 0, 3674, 1, {}, original, 0),
+        ("default-low-preset", 2, 3674, 1, {}, original, 0),
+        ("default-dimension-override", 1, 3674, 1,
+         {"RX_VK_TEX_MAX_DIM": "2048"}, original, 0),
+        ("default-threshold-override", 1, 3674, 1,
+         {"RX_VK_TEX_SKIP_MB": "64"}, original, 0),
+        ("default-aggressive-overrides", 1, 3674, 1,
+         {"RX_VK_TEX_MAX_DIM": "512", "RX_VK_TEX_SKIP_MB": "2"}, (3, 384, 9, 2, 341, 9), 0),
     ]
     for value in ("0", "off", "false", "no", "OFF", "FaLsE", " no \t", ""):
         cases.append(("disabled-" + repr(value), 1, 3674, 1,
