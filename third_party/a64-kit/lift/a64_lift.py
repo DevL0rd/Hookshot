@@ -689,10 +689,11 @@ def vectorize_fpx(text):
 # precision adds, subtracts, multiplies, divides or square roots, is emitted twice: a fast copy whose ops are plain SSE,
 # with MXCSR's flags cleared before it and read once after, and the exact copy. A clean fast run is the Arm result: with
 # no invalid operation (no NaN made), no denormal operand and no underflow (FTZ on under FPCR.FZ: a tiny result is
-# flushed and flagged), IEEE single precision round-to-nearest is the same on both, and a quiet NaN operand propagates
-# the same way given the operand order (the ops are asm with Arm's order: x86 keeps the first source's NaN, Arm the
-# first operand's). Divide-by-zero and overflow give the same infinities; they and inexact are or-ed into FPSR. On an
-# invalid, denormal or underflow flag the registers the run names are put back and the exact copy runs. Measured
+# flushed and flagged), IEEE single precision round-to-nearest is the same on both, except for a NaN result or a
+# product, quotient or multiply-add of exactly 2^-126, which raise the invalid flag on purpose (a64_ff_guard_; the ops
+# are asm with Arm's operand order all the same). Divide-by-zero and overflow give the same infinities; they and inexact
+# are or-ed into FPSR. On an invalid, denormal or underflow flag the registers the run names are put back and the exact
+# copy runs. Measured
 # 2026-11-11 on OoT's f_820e1d60 in game (both run per call, compared): 0 mismatches in 150,000 calls, 1.79x faster.
 # HOS_NO_FASTFP (run time, any value): the exact copies only, for comparisons.
 FF_CALL = re.compile(r"\b((?:recomp|a64|A64|RECOMP)_\w+)\s*\(")
@@ -795,49 +796,80 @@ static inline __attribute__((always_inline)) int a64_ff_end(Ctx *c, unsigned m) 
 #ifdef __AVX__
 #define A64_FF_OP(ins, d, a, b) __asm__ volatile("v" ins " %2, %1, %0" : "=x"(d) : "x"(a), "x"(b))
 #define A64_FF_SQRT(d, a) __asm__ volatile("vsqrtss %1, %1, %0" : "=x"(d) : "x"(a))
+#define A64_FF_SPOIL "vcomiss %0, %0"
 #else
 #define A64_FF_OP(ins, d, a, b) do { (d) = (a); __asm__ volatile(ins " %1, %0" : "+x"(d) : "x"(b)); } while (0)
 #define A64_FF_SQRT(d, a) __asm__ volatile("sqrtss %1, %0" : "=x"(d) : "x"(a))
+#define A64_FF_SPOIL "comiss %0, %0"
 #endif
+/* The invalid flag raised on purpose (a signalling compare of a NaN), sending the run to its exact copy, for two results
+   whose value x86 gets right but not Arm's flags, or under FZ not Arm's value (found by tests/test_fastfp_fma.py):
+   - a NaN: x86 raises no denormal flag for a subnormal next to a NaN operand, where Arm under FZ flushes it and sets
+     IDC; and a multiply-add's 0 * inf + a quiet NaN gives that NaN with no flag (Arm: the default NaN, IOC);
+   - exactly 2^-126, the smallest normal, from a multiply, divide or multiply-add: x86 detects tininess after rounding,
+     Arm before, so a result rounded up to 2^-126 sets UFC on Arm, and is a zero under FZ. (A sum this small is exact.)
+   The tests are integer compares on the bits: a float compare would raise the denormal flag on a subnormal result. */
+static inline __attribute__((always_inline)) void a64_ff_spoil_(void) {
+    __asm__ volatile(A64_FF_SPOIL : : "x"(_mm_castsi128_ps(_mm_cvtsi32_si128(0x7fc00000))) : "cc");
+}
+static inline __attribute__((always_inline)) void a64_ff_guard_(uint64_t v, int tiny) {
+    const uint32_t m = (uint32_t)v & 0x7fffffffu;
+    if (__builtin_expect(m > 0x7f800000u || (tiny && m == 0x00800000u), 0)) a64_ff_spoil_();
+}
+static inline __attribute__((always_inline)) void a64_ff_vguard_(__m128 r, int k, int tiny) {   /* (the k lanes kept) */
+    const __m128i m = _mm_and_si128(_mm_castps_si128(r), _mm_set1_epi32(0x7fffffff));
+    __m128i bad = _mm_cmpgt_epi32(m, _mm_set1_epi32(0x7f800000));
+    if (tiny) bad = _mm_or_si128(bad, _mm_cmpeq_epi32(m, _mm_set1_epi32(0x00800000)));
+    if (__builtin_expect(_mm_movemask_ps(_mm_castsi128_ps(bad)) & (k == 4 ? 15 : 3), 0)) a64_ff_spoil_();
+}
+/* (2 lanes: the upper two are loaded as zeros, so they raise no flag of their own) */
+static inline __attribute__((always_inline)) __m128 a64_ff_vld(const uint64_t *s, int k) {
+    return k == 4 ? _mm_loadu_ps((const float *)s) : _mm_castsi128_ps(_mm_loadl_epi64((const __m128i *)s));
+}
 static inline __attribute__((always_inline)) void a64_ff_vst(uint64_t *d, __m128 r, int k) {
     if (k == 4) _mm_storeu_ps((float *)d, r); else _mm_storeu_si128((__m128i *)d, _mm_move_epi64(_mm_castps_si128(r)));
 }
-#define A64_FF_V(name, ins) \
+#define A64_FF_V(name, ins, tiny) \
 static inline __attribute__((always_inline)) void a64_ff_v##name(Ctx *c, uint64_t *d, const uint64_t *n, const uint64_t *m, int k) { \
-    __m128 r; (void)c; A64_FF_OP(ins, r, _mm_loadu_ps((const float *)n), _mm_loadu_ps((const float *)m)); a64_ff_vst(d, r, k); }
-A64_FF_V(add32, "addps")
-A64_FF_V(sub32, "subps")
-A64_FF_V(mul32, "mulps")
+    __m128 r; (void)c; A64_FF_OP(ins, r, a64_ff_vld(n, k), a64_ff_vld(m, k)); \
+    a64_ff_vguard_(r, k, tiny); a64_ff_vst(d, r, k); }
+A64_FF_V(add32, "addps", 0)
+A64_FF_V(sub32, "subps", 0)
+A64_FF_V(mul32, "mulps", 1)
 static inline __attribute__((always_inline)) __m128 a64_ff_ss(uint64_t a) { return _mm_castsi128_ps(_mm_cvtsi32_si128((int)(uint32_t)a)); }
 static inline __attribute__((always_inline)) uint64_t a64_ff_bits(__m128 r) { return (uint32_t)_mm_cvtsi128_si32(_mm_castps_si128(r)); }
-#define A64_FF_S(name, ins) \
+#define A64_FF_S(name, ins, tiny) \
 static inline __attribute__((always_inline)) uint64_t a64_ff_##name(Ctx *c, uint64_t a, uint64_t b) { \
-    __m128 r; (void)c; A64_FF_OP(ins, r, a64_ff_ss(a), a64_ff_ss(b)); return a64_ff_bits(r); }
-A64_FF_S(add32_add32, "addss")
-A64_FF_S(sub32_sub32, "subss")
-A64_FF_S(div32_div32, "divss")
-A64_FF_S(mul32_, "mulss")
+    __m128 r; (void)c; A64_FF_OP(ins, r, a64_ff_ss(a), a64_ff_ss(b)); a64_ff_guard_(a64_ff_bits(r), tiny); return a64_ff_bits(r); }
+A64_FF_S(add32_add32, "addss", 0)
+A64_FF_S(sub32_sub32, "subss", 0)
+/* (A subnormal over a zero also takes the exact copy: x86 raises no denormal flag beside divide-by-zero and gives an
+   infinity, where Arm under FZ flushes the subnormal first, 0 / 0: the default NaN and IOC.) */
+static inline __attribute__((always_inline)) uint64_t a64_ff_div32_div32(Ctx *c, uint64_t a, uint64_t b) {
+    __m128 r;
+    (void)c;
+    if (__builtin_expect(((uint32_t)b << 1) == 0 && ((uint32_t)a << 1) - 1u < 0x00ffffffu, 0)) a64_ff_spoil_();
+    A64_FF_OP("divss", r, a64_ff_ss(a), a64_ff_ss(b));
+    a64_ff_guard_(a64_ff_bits(r), 1);
+    return a64_ff_bits(r);
+}
+A64_FF_S(mul32_, "mulss", 1)
 static inline __attribute__((always_inline)) uint64_t a64_ff_mul32_fma32(Ctx *c, uint64_t a, uint64_t b, uint64_t z) { (void)z; return a64_ff_mul32_(c, a, b); }
 static inline __attribute__((always_inline)) uint64_t a64_ff_sqrt32_sqrt32(Ctx *c, uint64_t a) { __m128 r; (void)c; A64_FF_SQRT(r, a64_ff_ss(a)); return a64_ff_bits(r); }
 /* (hookshot) FMADD/FMSUB/FNMADD/FNMSUB and FMLA/FMLS S lanes: a64_fpx_fma32_fma32(c, a, b, z) is a*b + z, the lifted
    code having already flipped the signs the op negates. FMA3's vfmadd231ss rounds once, as Arm does, and takes its
-   NaN in Arm's order (the addend, then a, then b). Two cases differ, and both raise the invalid flag here (a64_ff_spoil_),
+   NaN in Arm's order (the addend, then a, then b). Two cases differ, and both raise the invalid flag here (a64_ff_guard_),
    which sends the run to its exact copy:
    - 0 * inf + a quiet NaN: x86 returns that NaN with no flag, Arm the default NaN with IOC (so: any NaN result);
    - a result rounded up to the smallest normal, 2^-126: x86 detects tininess after rounding and raises no underflow,
      Arm detects it before, sets UFC, and under FZ returns a zero.
    Without FMA3 (x86-64-v2), the exact helper. */
 #ifdef __FMA__
-static inline __attribute__((always_inline)) void a64_ff_spoil_(void) {
-    __asm__ volatile("vcomiss %0, %0" : : "x"(_mm_castsi128_ps(_mm_cvtsi32_si128(0x7fc00000))) : "cc");
-}
 static inline __attribute__((always_inline)) uint64_t a64_ff_fma32_fma32(Ctx *c, uint64_t a, uint64_t b, uint64_t z) {
     __m128 r = a64_ff_ss(z);
-    uint32_t m;
     (void)c;
     __asm__ volatile("vfmadd231ss %2, %1, %0" : "+x"(r) : "x"(a64_ff_ss(a)), "x"(a64_ff_ss(b)));
-    m = (uint32_t)a64_ff_bits(r) & 0x7fffffffu;
-    if (__builtin_expect(m > 0x7f800000u || m == 0x00800000u, 0)) a64_ff_spoil_();
+    a64_ff_guard_(a64_ff_bits(r), 1);
     return a64_ff_bits(r);
 }
 #else

@@ -1,5 +1,5 @@
-"""(hookshot) The fast float regions' FMA3 multiply-add (a64_ff_fma32_fma32 in a64_lift.py's FASTFP_HEADER) against the
-exact body, game-free.
+"""(hookshot) The fast float regions' ops (a64_lift.py's FASTFP_HEADER: the FMA3 multiply-add, the multiply, divide,
+add and subtract, and the vector add, subtract and multiply) against the exact bodies, game-free.
 
 Builds what the real build builds (a64_fpx.h, a64_suyu.h, a64_suyu.c, through tests/test_fpx_sticky.py's generate) plus
 FASTFP_HEADER, and compiles tests/fastfp_fma_test.c at -march=x86-64-v3 with the build's FP flags. The op runs alone
@@ -17,12 +17,11 @@ It has teeth (each by hand, then restored, 2026-11-11):
   - the addend's place changed (vfmadd231ss made vfmadd213ss: z * a + b): wrong values.
   (a and b swapped is not caught, and need not be: the product commutes, and a NaN result always falls back.)
 
-The multiply (a64_ff_mul32_fma32, PR #2433's) is run too, but only reported unless --strict-mul: on 2026-11-11 it kept
-15348 of 8M results that differ from Arm's: a product rounded up to 2^-126 (UFC missing; under FZ, 2^-126 where Arm
-gives a zero), and under FZ a subnormal times a quiet NaN (Arm flushes the subnormal and sets IDC; x86 raises no
-denormal flag when the other operand is a NaN).
+Every other op is held to the same. Before a64_ff_guard_, the multiply kept 15348 of 8M results that differ from
+Arm's: a product rounded up to 2^-126 (UFC missing, and under FZ 2^-126 where Arm gives a zero), and under FZ a
+subnormal times a quiet NaN (Arm flushes the subnormal and sets IDC; x86 raises no denormal flag next to a NaN).
 
-    python -I -B tests/test_fastfp_fma.py [--cc clang] [--cxx clang++] [--strict-mul]
+    python -I -B tests/test_fastfp_fma.py [--cc clang] [--cxx clang++]
 """
 import argparse
 import os
@@ -43,7 +42,6 @@ def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--cc")
     p.add_argument("--cxx")
-    p.add_argument("--strict-mul", action="store_true", help="fail on the multiply's mismatches too")
     a = p.parse_args()
     if platform.machine().lower() not in ("x86_64", "amd64"):
         print("fastfp fma: skipped (not an x86-64 host)")
@@ -65,13 +63,13 @@ def main():
                  os.path.join(ROOT, "tests", "fastfp_fma_test.c"), os.path.join(tmp, "a64_suyu.c"), "-o", exe],
                 "the driver")
         failed = []
-        for op in ("fma", "mul"):
-            r = S.run([exe, op, str(N), str(SEED)])
+        for op in ("fma", "mul", "div", "add", "sub", "vmul", "vadd", "vsub"):
+            r = S.run([exe, op, str(N if op in ("fma", "mul") else N // 4), str(SEED)])
             print(r.stdout.rstrip())
             if r.returncode == 3:
                 print("fastfp fma: skipped (this CPU is not x86-64-v3)")
                 return
-            if r.returncode and (op == "fma" or a.strict_mul):
+            if r.returncode:
                 failed.append(op)
     if failed:
         raise SystemExit("fastfp fma: FAIL (%s) in %.1f s" % (", ".join(failed), time.time() - t0))

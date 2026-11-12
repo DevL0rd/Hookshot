@@ -13,7 +13,7 @@ FASTFP_HEADER and stand-in exact helpers that count their calls and note the reg
 -march=x86-64-v3 (the AVX forms) and -march=x86-64-v2 (SSE). Each build must:
   - random normal operands (200,000 runs): the fast copy only, and every output register equal to the same ops done in
     plain C in the host's default mode (a swapped operand order in a subtract or a divide fails);
-  - two quiet NaN operands: the first operand's NaN (Arm's choice; a commuted add or multiply fails);
+  - two quiet NaN operands: the exact copy (any NaN result does: a64_ff_guard_);
   - 0 * inf (invalid), a denormal operand, a tiny product under FPCR.FZ (underflow, FTZ): the exact copy runs, and sees
     the region's input registers as they were (the fast copy wrote over them);
   - a tiny exact product without FZ, read again by the next op: the exact copy (a denormal operand flags it);
@@ -21,8 +21,8 @@ FASTFP_HEADER and stand-in exact helpers that count their calls and note the reg
   - the gate closed (FPSR.IXC clear, or HOS_NO_FASTFP set): the exact copy;
   - (hookshot) a scalar FMSUB in the region (FMA3 at x86-64-v3, the exact helper at v2), and at v3 the cases where x86's
     FMA is not Arm's: 0 * inf + a quiet NaN, a product rounded up to 2^-126 (FZ off and on), a subnormal addend under
-    FZ: the exact copy. (Dropping fma32_fma32 from FF_CONV fails the 2^-126 cases.) The op alone against the exact body:
-    tests/test_fastfp_fma.py.
+    FZ: the exact copy. (Dropping fma32_fma32 from FF_CONV fails the 2^-126 cases.) Each op alone against its exact
+    body: tests/test_fastfp_fma.py.
 
 It has teeth (each by hand, then restored, 2026-11-11):
   - the AVX ops' operands swapped (A64_FF_OP's "%2, %1, %0" made "%1, %2, %0"): the random runs differ at v3;
@@ -180,9 +180,7 @@ int main(void) {
         if (bad > 10) return 1;
     }
     fresh(&c, 0); set(&c, 0, 0x7fc00001u, 0x7fc00002u, 0, 0); set(&c, 1, 0x7fc00003u, 0x7fc00004u, 0, 0);
-    EXPECT(run(&c) == 0, "two NaNs: the exact copy ran");
-    { uint32_t l[4]; memcpy(l, c.vreg[0], 16);
-      EXPECT(l[0] == 0x7fc00001u && l[1] == 0x7fc00002u, "two NaNs: not the first operand's (%%08x %%08x)", l[0], l[1]); }
+    must_fall_back("two NaNs (a NaN result: the exact copy flags it as Arm does)", &c);
     fresh(&c, 0); set(&c, 0, 0, 0x3f800000u, 0x3f800000u, 0x3f800000u); set(&c, 1, 0x7f800000u, 0x3f800000u, 0x3f800000u, 0x3f800000u);
     must_fall_back("0 * inf", &c);
     fresh(&c, 0); set(&c, 1, 0x00000123u, 0x3f800000u, 0x3f800000u, 0x3f800000u);
