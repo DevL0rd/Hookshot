@@ -31,4 +31,6 @@ Exact source inputs, upstreamed changes and historical removals are recorded in 
 
 ## Validation
 
-Refresh verification is in progress. The installed game remains the previously verified `af7ffa0740b97209ac3af43045fe142e19ae8394` runtime. Updating this Git branch does not install a new game build, alter saves/settings/caches, or establish a gameplay performance change.
+The 2026-11-13 refresh passed independent source review and the complete Linux suite: **514 passed, 0 failed, 20 skipped** in 150 seconds. Platform/device-specific skips remain documented by the runner. Tk checks ran on an isolated Xvfb display. Extraction fixtures were adapted to the pool-aware helper without removing assertions. The native game and renderer built successfully in 698 seconds with zero compilation failures and no unresolved shared-library dependencies. No gameplay or performance comparison was run.
+
+The installed game remains the previously verified `af7ffa0740b97209ac3af43045fe142e19ae8394` runtime. Updating this Git branch does not install a new game build, alter saves/settings/caches, or establish a gameplay performance change.
