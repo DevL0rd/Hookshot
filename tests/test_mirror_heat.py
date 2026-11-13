@@ -7,6 +7,7 @@ full of pools bound now and then, the pool bound every submission was read over 
 python -I -B tests/test_mirror_heat.py [--cxx g++]
 """
 import argparse
+import os
 import subprocess
 import tempfile
 from pathlib import Path
@@ -77,6 +78,56 @@ int main() {
 """
 
 
+SWAP_FIXTURE = r"""
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <map>
+#include <string>
+#include <vector>
+#include "gpu/vk/compat/hookshot_env.h"
+struct Pool {
+    enum { MIRROR_NONE, MIRROR_WANTED, MIRROR_ON } mstate = MIRROR_ON;
+    uint64_t lo = 0, hi = 16ull << 20, heat = 0, last_value = 0, made_epoch = 0;
+    bool inherit_pending = false, gpu_only = false, gpu_written = false;
+};
+std::map<uint64_t, Pool> imported;
+std::vector<Pool*> mirror_wanted;
+uint64_t mirror_epoch = 1000, mem_completed = 10, mirror_bytes = 32ull << 20;
+int freed = 0, made = 0;
+uint64_t mirror_budget() { return 32ull << 20; }
+void mirror_free(Pool& p) { p.mstate = Pool::MIRROR_NONE; mirror_bytes -= p.hi - p.lo; freed++; }
+bool mirror_make(Pool& p) { p.mstate = Pool::MIRROR_ON; mirror_bytes += p.hi - p.lo; made++; return true; }
+void logf(const char*, ...) {}
+@POLICY@
+int main(int argc, char** argv) {
+    if (argc != 2) return 2;
+    const std::string mode = argv[1];
+    auto& protected_pool = imported[1];
+    protected_pool.gpu_written = true;
+    auto& victim = imported[2];
+    if (mode == "gpu-only") victim.gpu_only = true;
+    if (mode == "pending") victim.inherit_pending = true;
+    if (mode == "busy") victim.last_value = 11;
+    if (mode == "young") victim.made_epoch = 999;
+    if (mode == "written") victim.gpu_written = true;
+    Pool wanted;
+    wanted.mstate = Pool::MIRROR_WANTED;
+    wanted.heat = 256ull << 20;
+    mirror_wanted.push_back(&wanted);
+    mirrors_swap_for_hot();
+    const bool should_swap = mode == "ordinary";
+    if (protected_pool.mstate != Pool::MIRROR_ON || freed != (int)should_swap || made != (int)should_swap ||
+        wanted.mstate != (should_swap ? Pool::MIRROR_ON : Pool::MIRROR_WANTED) ||
+        victim.mstate != (should_swap ? Pool::MIRROR_NONE : Pool::MIRROR_ON) ||
+        mirror_wanted.size() != (should_swap ? 0u : 1u)) return 1;
+    std::printf("PASS hot swap %s\n", argv[1]);
+}
+"""
+
+
 def block(text, marker):
     start = text.index(marker)
     end = text.index("{", start) + 1
@@ -96,7 +147,7 @@ def main():
     swap = block(source, "void mirrors_swap_for_hot()")
     # (the swap takes only mirrors the GPU is done with, old enough, that guest memory has all of after their write-backs,
     # none with stores through the page table, and makes the wanted pool first)
-    for need in ("p.last_value <= mem_completed", "kSwapHold", "!p.gpu_only", "RX_VK_FOLLOW_STORES", "mirror_swap_pick(",
+    for need in ("p.last_value <= mem_completed", "kSwapHold", "!p.gpu_only", "!p.gpu_written", "RX_VK_MIRROR_KEEP", "RX_VK_FOLLOW_STORES", "mirror_swap_pick(",
                  "mirror_wanted.erase(hottest)", "mirror_make(*w)"):
         assert need in swap, "mirrors_swap_for_hot: no " + need
     with tempfile.TemporaryDirectory(prefix="hookshot-mirror-heat-") as temp:
@@ -104,6 +155,19 @@ def main():
         src.write_text(FIXTURE.replace("/* ACTUAL_PICK */", pick), encoding="utf-8")
         subprocess.run([a.cxx, "-std=c++17", "-O0", "-Wall", "-Wextra", "-Werror", str(src), "-o", str(exe)], check=True)
         subprocess.run([str(exe)], check=True)
+        src.write_text(SWAP_FIXTURE.replace("@POLICY@", "constexpr uint64_t kSwapHold = 600;\nint64_t st_swaps = 0;\n" + pick + "\n" + swap), encoding="utf-8")
+        subprocess.run([a.cxx, "-std=c++17", "-O0", "-Wall", "-Wextra", "-Werror", "-I", str(ROOT), str(src), "-o", str(exe)], check=True)
+        for mode in ("ordinary", "written", "gpu-only", "pending", "busy", "young", "keep", "follow", "off"):
+            env = os.environ.copy()
+            for key in ("RX_VK_MIRROR_HEAT", "RX_VK_MIRROR_KEEP", "RX_VK_FOLLOW_STORES"):
+                env.pop(key, None)
+            if mode == "keep":
+                env["RX_VK_MIRROR_KEEP"] = "1"
+            if mode == "follow":
+                env["RX_VK_FOLLOW_STORES"] = "1"
+            if mode == "off":
+                env["RX_VK_MIRROR_HEAT"] = "off"
+            subprocess.run([str(exe), mode], env=env, check=True)
 
 
 if __name__ == "__main__":

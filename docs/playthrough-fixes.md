@@ -1,45 +1,34 @@
 # Playthrough fixes
 
-This branch combines official upstream main with a small set of pending changes supported by concrete gameplay evidence or a reproducible validated bug fix. Passing source checks alone is not evidence of a performance improvement.
+This branch uses the accepted main snapshot plus one pending PR, #1377, and the existing local texture-quality opt-in policy. Passing source checks alone does not establish a performance improvement.
 
-Official upstream base: `ef81aee767f848255ca08171bba33b8c40c79347` (2026-11-12). Exact inputs, historical merge provenance, removals and integration policy are in [playthrough-prs.json](playthrough-prs.json).
+Base: `8c359bca1192d9c68d802bc99163be3b70156265`. The original `NotRexed/Hookshot` GitHub repository returned 404 over Git HTTPS, Git SSH and the API on 2026-11-13. The user accepted the snapshot from [the mirror](https://issues.sakul-flee.de/Mirrors/Hookshot), which reports synchronization on 2026-11-13. It contains 148 commits beyond the previous base `ef81aee767f848255ca08171bba33b8c40c79347`. This identifies the accepted snapshot; it does not assert that it is current official upstream.
 
-## Retained pending changes
+## Remaining pending PR
 
-| PR | Purpose | Evidence and limits |
+| PR | Purpose | Integration and evidence limits |
 |---|---|---|
-| [#1377](https://github.com/NotRexed/Hookshot/pull/1377) | Prefer hot memory pools for VRAM mirrors | Real-game traffic and memory-sync reduction; reviewed safety corrections. No measured FPS gain on this Linux laptop. |
-| [#2306](https://github.com/NotRexed/Hookshot/pull/2306) | Native NVIDIA float atomic adds | RTX4090 game A/B reduced GPU time about 7%; NVIDIA-only default. Does not establish the same gain here. |
-| [#2093](https://github.com/NotRexed/Hookshot/pull/2093) | Correct day-clock progression above 60 FPS | Live clock before/after evidence and independent review. Preserve official water, sound and timing fixes. |
-| [#2540](https://github.com/NotRexed/Hookshot/pull/2540) | Keep builder-launched Linux games in their own scope | Independent actual-game process lifetime test. Direct launcher behavior is unchanged. |
-| [#2575](https://github.com/NotRexed/Hookshot/pull/2575) | Honor disabled high-FPS logging switches | Deterministic parsing bug reproduced by existing source tests. |
+| [#1377](https://github.com/NotRexed/Hookshot/pull/1377) | Prefer hot memory pools for VRAM mirrors | Adapt the selected head `59edbbe50200e595f3977145cefff282e3522f00` to newer upstream pool management. Keep GPU-only and GPU-written mirrors protected, inherited flags, smaller imports, live-pool trimming and mirror-keep behavior. Prior real-game evidence showed reduced memory traffic and synchronization; no FPS improvement is established on this Linux laptop. |
 
-## Removed pending changes
+## Changes now supplied by main
 
-Full current descriptions, comments and reviews were rechecked before this conservative reduction.
+The snapshot supplies the four other previously retained PRs, so no separate fork patch is reapplied:
 
-- #2114: no measured cutscene gameplay run; unresolved video conversion and decoder-thread concerns.
-- #1541: no isolated game gain for the broad bundle; affinity and cache changes remain disputed.
-- #1946: reported gameplay did not exercise the stand-in pipeline path; current cold-cache behavior lacks validation.
-- #2134: extra predicted pipelines have no demonstrated gameplay-use count and increase preparation work.
-- #2433: promising final-head result, but only one confounded static-scene comparison; insufficient representative validation.
-- #2487: real priority issue bundled with an optimization supported mainly by microbenchmarks; whole PR removed.
-- #2545: terrain-writeback hypothesis has positive-path evidence, but the paired experiment did not reproduce the faulty case and independent confirmation is absent.
+- #2306: native NVIDIA float atomic adds (`de819234`).
+- #2093: correct day-clock progression above 60 FPS (`f0c40fc9`).
+- #2540: keep builder-launched Linux games in their own scope (`50c81bb8`), with upstream handoff correction `bc0ecd84`.
+- #2575: honor disabled high-FPS logging switches (`7dfb853b`).
 
-Removal does not establish that a PR is broken or caused the local performance regression. The smaller combination still needs gameplay validation.
+Previously removed PRs #2114, #2134 and #2545 have also landed in the accepted snapshot. Their upstream implementations are included as part of the new base; old fork removals must not erase them. #1541, #1946, #2433 and #2487 remain excluded as separate pending bundles. Independent upstream fixes are preserved even where they address related areas.
 
-## Official fixes and quality policy
+## Texture-quality policy
 
-#1961 and #2133 are supplied by official main. Official synchronization fixes remain, including the complete-submission fence mapping. The temporary old-fence diagnostic and launcher catch-up override are removed.
-
-Upstream #1009 is present. Its additional low-VRAM texture reduction remains opt-in: unset or disabled `RX_VK_LOW_VRAM_MIPS` preserves previous texture limits. Explicit `RX_VK_LOW_VRAM_MIPS=1` still requires Minimum and a nonzero driver budget at or below 4.5 GiB. Player options, saves and caches are preserved.
+The existing local adjustment for upstream #1009 remains: additional low-VRAM texture reduction is explicit opt-in with `RX_VK_LOW_VRAM_MIPS=1`. Unset or disabled values preserve previous texture limits. Keep upstream's Minimum and new Auto-preset-at-Minimum eligibility and its nonzero budget at or below 4.5 GiB; this fork does not apply additional mip cuts automatically. This is a local policy adjustment, not another pending PR.
 
 ## Updating this branch
 
-The source was reconstructed from pinned official main and selected inputs while preserving published history. Removed PR heads remain ancestors, so ancestry alone no longer establishes that their code is present. For future updates reconstruct from the new official main plus only pending inputs still needed; do not rely on an ordinary merge to restore a previously removed implementation that has since landed upstream.
-
-Build matching game and renderer binaries and run required checks before publishing. Keep game-derived files local. No FPS improvement is claimed for this combination without a comparable gameplay run.
+Exact source inputs, upstreamed changes and historical removals are recorded in [playthrough-prs.json](playthrough-prs.json). Preserve published history while reconstructing from the selected main tree plus still-needed deltas. Historical merge ancestry alone cannot show whether a previously removed implementation is present.
 
 ## Validation
 
-The conservative source passed independent composition review and the existing full suite: 455 passed, 0 failed, 20 skipped (175 seconds). The removed PRs' own checks were removed with their source; official-main checks and retained changes remain covered. The official Linux release build completed in 565 seconds (426-second compile phase), reusing 327 objects and compiling 159, with no failures or missing dynamic libraries. It ships 29,688 pipeline states. Matching game and renderer binaries were built from `af7ffa0740b97209ac3af43045fe142e19ae8394`. Shader preparation and gameplay were not run during this work. The changed translator triggers preparation at the next normal launch.
+Refresh verification is in progress. The installed game remains the previously verified `af7ffa0740b97209ac3af43045fe142e19ae8394` runtime. Updating this Git branch does not install a new game build, alter saves/settings/caches, or establish a gameplay performance change.

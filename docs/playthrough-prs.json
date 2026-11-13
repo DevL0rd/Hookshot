@@ -1,10 +1,10 @@
 {
   "upstream": "https://github.com/NotRexed/Hookshot",
-  "upstream_base": "ef81aee767f848255ca08171bba33b8c40c79347",
-  "previous_upstream_base": "ddafc1f9df3c34e6971d29b12ab6de5d55696685",
+  "upstream_base": "8c359bca1192d9c68d802bc99163be3b70156265",
+  "previous_upstream_base": "ef81aee767f848255ca08171bba33b8c40c79347",
   "fork": "https://github.com/DevL0rd/Hookshot",
   "branch": "playthrough-fixes",
-  "updated_at": "2026-11-12",
+  "updated_at": "2026-11-13",
   "included": [
     {
       "pr": 1377,
@@ -12,39 +12,7 @@
       "head": "59edbbe50200e595f3977145cefff282e3522f00",
       "purpose": "Prefer hot memory pools for VRAM mirrors",
       "historical_merge_commit": "ef21bd010a4a96829423658d843515bb555566c1",
-      "application": "Tracked source reconstructed from pinned official upstream plus selected input; historical merge ancestry alone is not a source-presence check."
-    },
-    {
-      "pr": 2306,
-      "url": "https://github.com/NotRexed/Hookshot/pull/2306",
-      "head": "50579babdd522d50460b4b0f9859f2964819322b",
-      "purpose": "Native NVIDIA float atomic adds",
-      "historical_merge_commit": "d7ea6951a00568f2b74e7f7d7015c65027d6e4b0",
-      "application": "Tracked source reconstructed from pinned official upstream plus selected input; historical merge ancestry alone is not a source-presence check."
-    },
-    {
-      "pr": 2540,
-      "url": "https://github.com/NotRexed/Hookshot/pull/2540",
-      "head": "a1579d4e4d5f2896800c96217e76bb4c0f21cd11",
-      "purpose": "Keep Linux launcher game processes in their own scope",
-      "historical_merge_commit": "7023ab015cafc3ebb25e21131319f6c159e1908d",
-      "application": "Tracked source reconstructed from pinned official upstream plus selected input; historical merge ancestry alone is not a source-presence check."
-    },
-    {
-      "pr": 2093,
-      "url": "https://github.com/NotRexed/Hookshot/pull/2093",
-      "head": "7bc9019105dbea5921be4c70f998be874a753ba8",
-      "purpose": "Correct day-clock progression above 60 FPS",
-      "historical_merge_commit": "e2bf4d31d759b79d585c6ecab42509ba7cd7d7dc",
-      "application": "Only verified day-clock integration delta e2bf4d31^1..e2bf4d31 applied; prior stacked dependencies already supplied by official main."
-    },
-    {
-      "pr": 2575,
-      "url": "https://github.com/NotRexed/Hookshot/pull/2575",
-      "head": "964b030998df717271368dfe18ef572c65268463",
-      "purpose": "Honor disabled high-FPS logging switches",
-      "historical_merge_commit": "bd0e8694f6ae95fb1729ee795f5f210f1de9cf35",
-      "application": "Tracked source reconstructed from pinned official upstream plus selected input; historical merge ancestry alone is not a source-presence check."
+      "application": "Adapted hot-pool selection on accepted main snapshot; preserve newer GPU-written mirror protection, inherited flags, 4 MB imports, live-pool trimming and mirror-keep behavior. Historical ancestry alone is not a source-presence check."
     }
   ],
   "upstreamed": [
@@ -63,6 +31,47 @@
       "merge_commit": "910c7ff86bf8e970ca223806b085ef4373df2de7",
       "purpose": "Converted pipeline-state contribution",
       "upstream_commit": "b8fd5fdbc28b1b1272ab82a7742f89467152c5af"
+    },
+    {
+      "pr": 2306,
+      "url": "https://github.com/NotRexed/Hookshot/pull/2306",
+      "head": "50579babdd522d50460b4b0f9859f2964819322b",
+      "purpose": "Native NVIDIA float atomic adds",
+      "historical_merge_commit": "d7ea6951a00568f2b74e7f7d7015c65027d6e4b0",
+      "application": "Tracked source reconstructed from pinned official upstream plus selected input; historical merge ancestry alone is not a source-presence check.",
+      "upstream_commit": "de8192345086c7c79c115fff260163508bb19c43",
+      "state": "Supplied by accepted upstream-main snapshot; no separate fork reapplication."
+    },
+    {
+      "pr": 2540,
+      "url": "https://github.com/NotRexed/Hookshot/pull/2540",
+      "head": "a1579d4e4d5f2896800c96217e76bb4c0f21cd11",
+      "purpose": "Keep Linux launcher game processes in their own scope",
+      "historical_merge_commit": "7023ab015cafc3ebb25e21131319f6c159e1908d",
+      "application": "Tracked source reconstructed from pinned official upstream plus selected input; historical merge ancestry alone is not a source-presence check.",
+      "upstream_commit": "50c81bb81b1dce89dc07762cc1c798700b3ad94f",
+      "state": "Supplied by accepted upstream-main snapshot; no separate fork reapplication.",
+      "upstream_followup": "bc0ecd8409a5bca0b831c060dd9c3616f512ff83"
+    },
+    {
+      "pr": 2093,
+      "url": "https://github.com/NotRexed/Hookshot/pull/2093",
+      "head": "7bc9019105dbea5921be4c70f998be874a753ba8",
+      "purpose": "Correct day-clock progression above 60 FPS",
+      "historical_merge_commit": "e2bf4d31d759b79d585c6ecab42509ba7cd7d7dc",
+      "application": "Only verified day-clock integration delta e2bf4d31^1..e2bf4d31 applied; prior stacked dependencies already supplied by official main.",
+      "upstream_commit": "f0c40fc96cdfc48ac1ca974620f6594af2c9546a",
+      "state": "Supplied by accepted upstream-main snapshot; no separate fork reapplication."
+    },
+    {
+      "pr": 2575,
+      "url": "https://github.com/NotRexed/Hookshot/pull/2575",
+      "head": "964b030998df717271368dfe18ef572c65268463",
+      "purpose": "Honor disabled high-FPS logging switches",
+      "historical_merge_commit": "bd0e8694f6ae95fb1729ee795f5f210f1de9cf35",
+      "application": "Tracked source reconstructed from pinned official upstream plus selected input; historical merge ancestry alone is not a source-presence check.",
+      "upstream_commit": "7dfb853b082aa13858b31f39a31e61357f203c6d",
+      "state": "Supplied by accepted upstream-main snapshot; no separate fork reapplication."
     }
   ],
   "local_adjustments": [
@@ -74,20 +83,12 @@
   ],
   "quality_policy": {
     "pr": 1009,
-    "state": "present upstream; automatic quality reduction disabled by fork default",
+    "state": "Present upstream; fork keeps additional texture reduction explicit opt-in, including new Auto-preset-at-Minimum eligibility.",
     "enable": "RX_VK_LOW_VRAM_MIPS=1",
     "default": "Previous texture limits retained"
   },
   "selection_policy": "Retain pending changes with credible demonstrated gameplay benefit or a concrete reproducible and validated bug fix; source-suite passes alone do not establish performance.",
   "removed": [
-    {
-      "pr": 2114,
-      "url": "https://github.com/NotRexed/Hookshot/pull/2114",
-      "head": "d50b10cad0207ef7582c39f52525e154a94e20f8",
-      "merge_commit": "8aee507e3d6bd997837684bddb9ab2616f87d6af",
-      "purpose": "Linux video conversion and SIMD interleave",
-      "reason": "No cutscene gameplay measurement; unresolved conversion and decode-thread concerns."
-    },
     {
       "pr": 1541,
       "url": "https://github.com/NotRexed/Hookshot/pull/1541",
@@ -105,14 +106,6 @@
       "reason": "Current behavior not exercised by the reported game runs; cold-cache validation absent."
     },
     {
-      "pr": 2134,
-      "url": "https://github.com/NotRexed/Hookshot/pull/2134",
-      "head": "8f3910d125e467446f04f470ed49404ddff6087d",
-      "merge_commit": "6f1deac09e7775338287f78e02e694382fd13bdb",
-      "purpose": "Plain-variant preparation and additional pipeline states",
-      "reason": "Additional predicted pipelines lack demonstrated gameplay use and increase preparation cost."
-    },
-    {
       "pr": 2433,
       "url": "https://github.com/NotRexed/Hookshot/pull/2433",
       "head": "1e6b7a2fdee8290a013195623dd5c445111fd5ca",
@@ -127,6 +120,36 @@
       "merge_commit": "3ef735f23d82c570fb055fc28014e6b3bd46791c",
       "purpose": "Linux condition-variable and priority fast paths",
       "reason": "Combined synchronization optimization supported mainly by microbenchmarks, without gameplay benefit evidence."
+    }
+  ],
+  "reconstruction_policy": "Use the accepted main snapshot tree plus only PR1377 and existing local texture-quality opt-in. Preserve published history; historical removed PR ancestors must not determine current source presence.",
+  "base_source": {
+    "url": "https://issues.sakul-flee.de/Mirrors/Hookshot.git",
+    "ref": "main",
+    "snapshot": "8c359bca1192d9c68d802bc99163be3b70156265",
+    "mirror_reported_sync": "2026-11-13T06:59:38+01:00",
+    "authorization": "User accepted this mirror snapshot because original upstream GitHub HTTPS/SSH/API are unavailable. This records a snapshot, not a claim of current official main."
+  },
+  "previously_removed_now_upstream": [
+    {
+      "pr": 2114,
+      "url": "https://github.com/NotRexed/Hookshot/pull/2114",
+      "head": "d50b10cad0207ef7582c39f52525e154a94e20f8",
+      "merge_commit": "8aee507e3d6bd997837684bddb9ab2616f87d6af",
+      "purpose": "Linux video conversion and SIMD interleave",
+      "historical_removal_reason": "No cutscene gameplay measurement; unresolved conversion and decode-thread concerns.",
+      "upstream_commit": "77225c53d230ac07cedf0101f4962eabd8cd3dba",
+      "state": "Now supplied by accepted upstream-main snapshot; previous fork removal no longer applies."
+    },
+    {
+      "pr": 2134,
+      "url": "https://github.com/NotRexed/Hookshot/pull/2134",
+      "head": "8f3910d125e467446f04f470ed49404ddff6087d",
+      "merge_commit": "6f1deac09e7775338287f78e02e694382fd13bdb",
+      "purpose": "Plain-variant preparation and additional pipeline states",
+      "historical_removal_reason": "Additional predicted pipelines lack demonstrated gameplay use and increase preparation cost.",
+      "upstream_commit": "333fa02cbb3cab49ce167c8c73fdb58bef3e52f0",
+      "state": "Now supplied by accepted upstream-main snapshot; previous fork removal no longer applies."
     },
     {
       "pr": 2545,
@@ -134,8 +157,9 @@
       "head": "9c5302e929e64ab13eb2f2e863729d639e66e166",
       "merge_commit": "7afd483fc8ecb6b54b2fc2d9208311a9cf2cc8f2",
       "purpose": "Asynchronous writeback of drawn terrain tiles",
-      "reason": "Original paired run did not reproduce the terrain bug; final positive-path run lacks independent confirmation."
+      "historical_removal_reason": "Original paired run did not reproduce the terrain bug; final positive-path run lacks independent confirmation.",
+      "upstream_commit": "06a892fc05e705376a1b6a3d7205f67c00db3f83",
+      "state": "Now supplied by accepted upstream-main snapshot; previous fork removal no longer applies."
     }
-  ],
-  "reconstruction_policy": "For future updates reconstruct from new official main and selected current pending inputs. Historical removed PR ancestors remain; ordinary ancestry checks or merges alone may not restore newly upstreamed implementations."
+  ]
 }
