@@ -46,7 +46,7 @@ def check_source():
     # (a written binding queues its whole write-back, or, planned in part, the ranges the CPU touched; the GPU write hazard is
     # noted either way)
     bind = mem[mem.index("p->gpu_written = true;   // (its mirror kept: mirrors_give_back)"):]
-    bind = bind[:bind.index("return remember({p->mirror, off, size, 0});")]
+    bind = bind[:bind.index("return remember(p, {p->mirror, off, size, 0});")]
     need("vk_memory.cpp: the written binding", bind,
          ["if (!wb_leave_out(wlo, whi, keep)) writebacks.push_back({p, off, whi - p->lo});",
           "for (const auto& [klo, khi] : keep) writebacks.push_back({p, klo - p->lo, khi - p->lo});",

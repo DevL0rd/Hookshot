@@ -288,7 +288,7 @@ def main():
     # (gpu_buffer: a texture unswizzled on the GPU, a texel buffer's view). The write-back's own copies into it, the
     # shadow's fill and the readback pages' refresh are the ones left out (the last with its reason, at note_in_place_read)
     noted = 0
-    for site in ("return remember({p->buffer, off, size, 0});", "vkCmdCopyBuffer(upload_command_buffer(), p.buffer, p.mirror,",
+    for site in ("return remember(p, {p->buffer, off, size, 0});", "vkCmdCopyBuffer(upload_command_buffer(), p.buffer, p.mirror,",
                  "vkCmdCopyBuffer(upload_command_buffer(), p->buffer, p->mirror, 1, &all);",
                  "return {p->buffer, guest - p->lo, size, p->address + (guest - p->lo)};"):
         at = 0
